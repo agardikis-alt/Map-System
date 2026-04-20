@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vendor Booth Map System</title>
+    <link rel="stylesheet" href="styles.css?v=5">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 id="event-title">Vendor Booth Map</h1>
+                <div class="event-selector">
+                    <label for="event-select">Select Event:</label>
+                    <select id="event-select">
+                        <option value="offstreet">OFFStreet Festival</option>
+                        <option value="territorial">Territorial Days</option>
+                        <option value="bluegrass">45th Annual Bluegrass Festival</option>
+                        <option value="laborday">Prescott Labor Day Show</option>
+                        <option value="fallshow">Prescott Fall Show</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-container">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <!-- Search -->
+                <div class="panel">
+                    <h3>Search</h3>
+                    <input type="text" id="search-input" placeholder="Vendor name or booth #...">
+                </div>
+
+                <!-- Filters -->
+                <div class="panel">
+                    <h3>Filters</h3>
+                    <div class="filter-group">
+                        <label for="category-filter">Category:</label>
+                        <select id="category-filter">
+                            <option value="all">All Categories</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="status-filter">Status:</label>
+                        <select id="status-filter">
+                            <option value="all">All Status</option>
+                            <option value="open">Open</option>
+                            <option value="assigned">Assigned</option>
+                            <option value="hold">Hold</option>
+                            <option value="unavailable">Unavailable</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Legend -->
+                <div class="panel">
+                    <h3>Category Legend</h3>
+                    <div id="legend-container"></div>
+                </div>
+
+                <!-- Stats -->
+                <div class="panel">
+                    <h3>Statistics</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <span class="stat-value" id="stat-total">0</span>
+                            <span class="stat-label">Total</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" id="stat-assigned">0</span>
+                            <span class="stat-label">Assigned</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" id="stat-open">0</span>
+                            <span class="stat-label">Open</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" id="stat-unavailable">0</span>
+                            <span class="stat-label">Unavailable</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="panel">
+                    <h3>Actions</h3>
+                    <div class="button-group">
+                        <button id="btn-edit-mode" class="btn btn-secondary">Edit Mode</button>
+                        <button id="btn-export" class="btn btn-primary">Export JSON</button>
+                        <button id="btn-import" class="btn btn-secondary">Import JSON</button>
+                        <button id="btn-reset" class="btn btn-danger">Reset to Original</button>
+                        <button id="btn-fit-map" class="btn btn-secondary">Fit Map to View</button>
+                        <button id="btn-diagnostics" class="btn btn-secondary">Toggle Diagnostics</button>
+                        <button id="btn-print" class="btn btn-secondary">Print Map</button>
+                    </div>
+                    <input type="file" id="import-file" accept=".json" style="display: none;">
+                </div>
+
+                <!-- Diagnostics Panel -->
+                <div class="panel diagnostics-panel hidden" id="diagnostics-panel">
+                    <h3>Diagnostics</h3>
+                    <div id="diagnostics-content">
+                        <p class="no-selection">Loading diagnostics...</p>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Map Container -->
+            <main class="map-container">
+                <div id="map-wrapper">
+                    <div id="map-content"></div>
+                </div>
+            </main>
+
+            <!-- Booth Detail Panel -->
+            <aside class="detail-panel" id="detail-panel">
+                <div class="detail-header">
+                    <h3>Booth Details</h3>
+                    <button id="close-detail" class="btn-close">&times;</button>
+                </div>
+                <div class="detail-content" id="detail-content">
+                    <p class="no-selection">Click a booth to view details</p>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Booth</h3>
+                <button class="btn-close" id="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-form">
+                    <input type="hidden" id="edit-booth-id">
+                    <div class="form-group">
+                        <label for="edit-vendor-name">Vendor Name:</label>
+                        <input type="text" id="edit-vendor-name">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-business-name">Business Name:</label>
+                        <input type="text" id="edit-business-name">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-category">Category:</label>
+                        <select id="edit-category"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-status">Status:</label>
+                        <select id="edit-status">
+                            <option value="open">Open</option>
+                            <option value="assigned">Assigned</option>
+                            <option value="hold">Hold</option>
+                            <option value="unavailable">Unavailable</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-phone">Phone:</label>
+                        <input type="tel" id="edit-phone">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-email">Email:</label>
+                        <input type="email" id="edit-email">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-notes">Notes:</label>
+                        <textarea id="edit-notes" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="btn-save" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip" class="tooltip"></div>
+
+    <script src="app.js?v=5"></script>
+</body>
+</html>
