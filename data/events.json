@@ -1,0 +1,47 @@
+{
+  "offstreet": {
+    "id": "offstreet",
+    "name": "OFFStreet Festival",
+    "date": "May 23-24, 2026",
+    "location": "Prescott Chamber Parking Lot",
+    "mapFile": "./maps/offstreet.svg?v=7",
+    "dataFile": "./data/event-offstreet.json",
+    "description": "Annual street festival with local vendors and artisans"
+  },
+  "territorial": {
+    "id": "territorial",
+    "name": "Territorial Days",
+    "date": "July 4, 2026",
+    "location": "Courthouse Plaza",
+    "mapFile": "./maps/plaza.svg?v=7",
+    "dataFile": "./data/event-territorial.json",
+    "description": "Independence Day celebration on the plaza"
+  },
+  "bluegrass": {
+    "id": "bluegrass",
+    "name": "45th Annual Bluegrass Festival",
+    "date": "August 2026",
+    "location": "Courthouse Plaza",
+    "mapFile": "./maps/plaza.svg?v=7",
+    "dataFile": "./data/event-bluegrass.json",
+    "description": "Annual bluegrass music festival"
+  },
+  "laborday": {
+    "id": "laborday",
+    "name": "Prescott Labor Day Show",
+    "date": "September 7, 2026",
+    "location": "Courthouse Plaza",
+    "mapFile": "./maps/plaza.svg?v=7",
+    "dataFile": "./data/event-laborday.json",
+    "description": "Labor Day weekend arts and crafts show"
+  },
+  "fallshow": {
+    "id": "fallshow",
+    "name": "Prescott Fall Show",
+    "date": "October 2026",
+    "location": "Courthouse Plaza",
+    "mapFile": "./maps/plaza.svg?v=7",
+    "dataFile": "./data/event-fallshow.json",
+    "description": "Fall arts and crafts show"
+  }
+}
