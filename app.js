@@ -207,7 +207,16 @@ class BoothMapSystem {
                 throw new Error('File is not a valid SVG');
             }
             
-            mapContent.innerHTML = svgContent;
+            // Fix relative image paths: when SVG is injected inline, 
+            // image hrefs need to be relative to the page, not the SVG file.
+            // Determine the folder the SVG lives in from its fetch path.
+            const svgFolder = normalizedPath.substring(0, normalizedPath.lastIndexOf('/') + 1);
+            const fixedSvgContent = svgContent.replace(
+                /href="(?!http|data:|\/)(.*?\.(png|jpg|jpeg|gif|webp))"/gi,
+                (match, filename) => `href="${svgFolder}${filename}"`
+            );
+            
+            mapContent.innerHTML = fixedSvgContent;
             this.diagnostics.mapLoaded = true;
             
             // Ensure SVG has proper dimensions
