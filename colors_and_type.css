@@ -1,0 +1,169 @@
+/* ============================================================
+   Vendor Booth Map System — Design Tokens
+   Source: agardikis-alt/Map-System
+   ============================================================ */
+
+/* ===== Brand & UI Colors ===== */
+:root {
+  /* Primary */
+  --color-primary:        #1976D2;   /* Material Blue 700 — buttons, links, selected state */
+  --color-primary-dark:   #1565C0;   /* Material Blue 800 — hover, selected booth stroke */
+
+  /* Neutrals */
+  --color-bg:             #F5F5F5;   /* Page background, stat item bg */
+  --color-card:           #FFFFFF;   /* Sidebar, detail panel, all cards */
+  --color-border:         #E0E0E0;   /* Card borders, dividers, input borders */
+  --color-map-bg:         #ECEFF1;   /* Map container (Blue Grey 50) */
+
+  /* Text */
+  --color-text-primary:   #212121;   /* Body, headings */
+  --color-text-secondary: #757575;   /* Labels, placeholders, secondary info */
+
+  /* Semantic */
+  --color-success:        #4CAF50;   /* Diagnostics OK */
+  --color-warning:        #FF9800;   /* Diagnostics warning, hold status */
+  --color-danger:         #F44336;   /* Reset button, errors */
+
+  /* Status badge backgrounds & text */
+  --status-open-bg:       #E8F5E9;
+  --status-open-text:     #2E7D32;
+  --status-assigned-bg:   #E3F2FD;
+  --status-assigned-text: #1565C0;
+  --status-hold-bg:       #FFF8E1;
+  --status-hold-text:     #F57F17;
+  --status-unavail-bg:    #ECEFF1;
+  --status-unavail-text:  #455A64;
+
+  /* Toast / notification */
+  --color-toast-bg:       #323232;
+  --color-toast-text:     #FFFFFF;
+
+  /* Tooltip */
+  --color-tooltip-bg:     rgba(33, 33, 33, 0.95);
+  --color-tooltip-text:   #FFFFFF;
+  --color-tooltip-info:   #BDBDBD;
+
+  /* Modal overlay */
+  --color-overlay:        rgba(0, 0, 0, 0.5);
+}
+
+/* ===== Category Colors (16 vendor categories) ===== */
+:root {
+  --cat-jewelry-bg:        #FCE4EC;  --cat-jewelry-border:    #C2185B;  --cat-jewelry-text:      #E91E63;
+  --cat-fineart-bg:        #F3E5F5;  --cat-fineart-border:    #7B1FA2;  --cat-fineart-text:      #9C27B0;
+  --cat-furniture-bg:      #EFEBE9;  --cat-furniture-border:  #5D4037;  --cat-furniture-text:    #795548;
+  --cat-woodwork-bg:       #F5F5F5;  --cat-woodwork-border:   #6D4C41;  --cat-woodwork-text:     #8D6E63;
+  --cat-pottery-bg:        #FBE9E7;  --cat-pottery-border:    #E64A19;  --cat-pottery-text:      #FF7043;
+  --cat-clothing-bg:       #E8EAF6;  --cat-clothing-border:   #303F9F;  --cat-clothing-text:     #3F51B5;
+  --cat-food-bg:           #FFF3E0;  --cat-food-border:       #F57C00;  --cat-food-text:         #FF9800;
+  --cat-homedecor-bg:      #E0F2F1;  --cat-homedecor-border:  #00796B;  --cat-homedecor-text:    #009688;
+  --cat-bathbody-bg:       #E0F7FA;  --cat-bathbody-border:   #0097A7;  --cat-bathbody-text:     #00BCD4;
+  --cat-metalwork-bg:      #ECEFF1;  --cat-metalwork-border:  #455A64;  --cat-metalwork-text:    #607D8B;
+  --cat-mixedmedia-bg:     #EDE7F6;  --cat-mixedmedia-border: #512DA8;  --cat-mixedmedia-text:   #673AB7;
+  --cat-nonprofit-bg:      #E8F5E9;  --cat-nonprofit-border:  #388E3C;  --cat-nonprofit-text:    #4CAF50;
+  --cat-sponsor-bg:        #FFF8E1;  --cat-sponsor-border:    #FFA000;  --cat-sponsor-text:      #FFC107;
+  --cat-open-bg:           #F5F5F5;  --cat-open-border:       #757575;  --cat-open-text:         #9E9E9E;
+  --cat-unavailable-bg:    #BDBDBD;  --cat-unavailable-border:#212121;  --cat-unavailable-text:  #424242;
+  --cat-hold-bg:           #FFFDE7;  --cat-hold-border:       #FBC02D;  --cat-hold-text:         #FFEB3B;
+}
+
+/* ===== Spacing & Layout Tokens ===== */
+:root {
+  --radius:              8px;    /* Standard border radius */
+  --radius-sm:           4px;    /* Small radius (legend swatches) */
+  --radius-pill:         12px;   /* Status badges */
+
+  --shadow:              0 2px 4px rgba(0, 0, 0, 0.1);    /* Cards, header */
+  --shadow-lg:           0 4px 12px rgba(0, 0, 0, 0.15);  /* Map, modals, tooltips */
+  --shadow-booth-sel:    drop-shadow(0 0 6px rgba(21, 101, 192, 0.7)); /* Selected booth */
+
+  --sidebar-width:       280px;
+  --detail-width:        320px;
+  --header-height:       60px;
+
+  --panel-pad:           15px;
+  --panel-gap:           15px;
+  --input-pad:           8px 12px;
+  --btn-pad:             10px 16px;
+
+  --transition-base:     0.2s ease;
+}
+
+/* ===== Typography Tokens ===== */
+:root {
+  /* Font stacks */
+  --font-ui:    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  --font-mono:  ui-monospace, 'SF Mono', 'Fira Code', monospace;
+
+  /* Size scale */
+  --text-xs:    11px;   /* Diagnostics list, monospace debug */
+  --text-sm:    12px;   /* Detail labels, stat labels, legend */
+  --text-base:  13px;   /* Tooltip text, filter labels */
+  --text-md:    14px;   /* Body, buttons, inputs, panel text */
+  --text-lg:    16px;   /* Detail panel heading, modal h3 */
+  --text-xl:    18px;   /* Modal title */
+  --text-2xl:   24px;   /* Stat values, detail booth number */
+  --text-h1:    1.5rem; /* Page/event title in header */
+
+  /* Weight */
+  --font-normal:  400;
+  --font-medium:  500;
+  --font-semibold:600;
+  --font-bold:    700;
+
+  /* Semantic aliases */
+  --label-style: uppercase;
+  --label-spacing: 0.5px;
+}
+
+/* ===== Base Typography Classes ===== */
+.t-panel-header {
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--label-spacing);
+  color: var(--color-text-primary);
+}
+
+.t-label {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--font-normal);
+  text-transform: uppercase;
+  letter-spacing: var(--label-spacing);
+  color: var(--color-text-secondary);
+}
+
+.t-body {
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  font-weight: var(--font-normal);
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+
+.t-stat-value {
+  font-family: var(--font-ui);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-primary);
+}
+
+.t-stat-label {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.t-page-title {
+  font-family: var(--font-ui);
+  font-size: var(--text-h1);
+  font-weight: var(--font-bold);
+  color: var(--color-primary);
+}
+
+.t-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
