@@ -1774,6 +1774,8 @@ class BoothMapSystem {
         const scale = Math.min(scaleX, scaleY, 1); // Don't scale up beyond 100%
         
         this._mapZoom = scale;
+        this._panX = 0;
+        this._panY = 0;
         this._applyMapZoom();
     }
 
@@ -1782,15 +1784,69 @@ class BoothMapSystem {
         if (!mapContainer) return;
 
         this._mapZoom = 1;
+        this._panX = 0;
+        this._panY = 0;
+        this._isPanning = false;
+        this._panStartX = 0;
+        this._panStartY = 0;
+        this._panStartPanX = 0;
+        this._panStartPanY = 0;
 
-        // Scroll-wheel zoom on map only
+        // Scroll-wheel zoom centered on cursor
         mapContainer.addEventListener('wheel', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const delta = e.deltaY > 0 ? -0.1 : 0.1;
-            this._mapZoom = Math.max(0.2, Math.min(5, this._mapZoom + delta));
+
+            const mapContent = document.getElementById('map-content');
+            if (!mapContent) return;
+            const rect = mapContent.getBoundingClientRect();
+
+            // Mouse position relative to the map content container
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Point in "map space" before zoom
+            const beforeX = (mouseX - this._panX) / this._mapZoom;
+            const beforeY = (mouseY - this._panY) / this._mapZoom;
+
+            // Apply zoom
+            const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
+            this._mapZoom = Math.max(0.2, Math.min(5, this._mapZoom + zoomDelta));
+
+            // Adjust pan so the point under the cursor stays under the cursor
+            this._panX = mouseX - beforeX * this._mapZoom;
+            this._panY = mouseY - beforeY * this._mapZoom;
+
             this._applyMapZoom();
         }, { passive: false });
+
+        // Middle-click or Ctrl+click drag to pan
+        mapContainer.addEventListener('mousedown', (e) => {
+            // Middle mouse button OR Ctrl+left click to pan
+            if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
+                e.preventDefault();
+                this._isPanning = true;
+                this._panStartX = e.clientX;
+                this._panStartY = e.clientY;
+                this._panStartPanX = this._panX;
+                this._panStartPanY = this._panY;
+                mapContainer.style.cursor = 'grabbing';
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!this._isPanning) return;
+            this._panX = this._panStartPanX + (e.clientX - this._panStartX);
+            this._panY = this._panStartPanY + (e.clientY - this._panStartY);
+            this._applyMapZoom();
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (this._isPanning) {
+                this._isPanning = false;
+                mapContainer.style.cursor = '';
+            }
+        });
 
         // Add zoom controls overlay
         const controls = document.createElement('div');
@@ -1803,7 +1859,7 @@ class BoothMapSystem {
         `;
         controls.innerHTML = `
             <button id="zoom-in" style="width:36px;height:36px;border:none;background:none;font-size:20px;cursor:pointer;border-radius:4px;">+</button>
-            <button id="zoom-reset" style="width:36px;height:28px;border:none;background:none;font-size:11px;cursor:pointer;border-radius:4px;color:#757575;" title="Reset zoom">FIT</button>
+            <button id="zoom-reset" style="width:36px;height:28px;border:none;background:none;font-size:11px;cursor:pointer;border-radius:4px;color:#757575;" title="Reset zoom">100%</button>
             <button id="zoom-out" style="width:36px;height:36px;border:none;background:none;font-size:20px;cursor:pointer;border-radius:4px;">−</button>
         `;
         mapContainer.style.position = 'relative';
@@ -1819,6 +1875,8 @@ class BoothMapSystem {
         });
         controls.querySelector('#zoom-reset').addEventListener('click', () => {
             this._mapZoom = 1;
+            this._panX = 0;
+            this._panY = 0;
             this._applyMapZoom();
         });
     }
@@ -1826,8 +1884,8 @@ class BoothMapSystem {
     _applyMapZoom() {
         const svg = document.querySelector('#map-content svg');
         if (!svg) return;
-        svg.style.transform = `scale(${this._mapZoom})`;
-        svg.style.transformOrigin = 'top left';
+        svg.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._mapZoom})`;
+        svg.style.transformOrigin = '0 0';
         // Update zoom indicator
         const resetBtn = document.getElementById('zoom-reset');
         if (resetBtn) resetBtn.textContent = `${Math.round(this._mapZoom * 100)}%`;
