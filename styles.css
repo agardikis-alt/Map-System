@@ -276,7 +276,7 @@ textarea:focus {
     background: white;
     box-shadow: var(--shadow-lg);
     border-radius: var(--radius);
-    overflow: visible;
+    overflow: hidden;
 }
 
 #map-content svg {
