@@ -1514,13 +1514,45 @@ class BoothMapSystem {
             svg.appendChild(rotHandle);
         });
 
-        // SVG coordinate helper
-        this._svgPoint = svg.createSVGPoint();
+        // SVG coordinate helper — accounts for CSS zoom transform
         this._getSVGCoords = (e) => {
-            const ctm = svg.getScreenCTM().inverse();
-            this._svgPoint.x = e.clientX;
-            this._svgPoint.y = e.clientY;
-            return this._svgPoint.matrixTransform(ctm);
+            const svg = document.querySelector('#map-content svg');
+            if (!svg) return { x: 0, y: 0 };
+            const mapContent = document.getElementById('map-content');
+            const rect = mapContent.getBoundingClientRect();
+            // Get mouse position relative to the map-content div
+            const clientX = e.clientX - rect.left;
+            const clientY = e.clientY - rect.top;
+            // Account for zoom and pan
+            const zoom = this._mapZoom || 1;
+            const panX = this._panX || 0;
+            const panY = this._panY || 0;
+            return {
+                x: (clientX - panX) / zoom,
+                y: (clientY - panY) / zoom
+            };
+        };
+
+        // Helper to reposition all handles for a booth
+        this._updateHandles = (boothEl) => {
+            const x = parseFloat(boothEl.getAttribute('x')) || 0;
+            const y = parseFloat(boothEl.getAttribute('y')) || 0;
+            const w = parseFloat(boothEl.getAttribute('width')) || 30;
+            const h = parseFloat(boothEl.getAttribute('height')) || 30;
+            const transform = boothEl.getAttribute('transform') || '';
+
+            const resHandle = document.querySelector(`.resize-handle[data-booth-id="${boothEl.id}"]`);
+            if (resHandle) {
+                resHandle.setAttribute('x', x + w - 6);
+                resHandle.setAttribute('y', y + h - 6);
+                resHandle.setAttribute('transform', transform);
+            }
+            const rotHandle = document.querySelector(`.rotate-handle[data-booth-id="${boothEl.id}"]`);
+            if (rotHandle) {
+                rotHandle.setAttribute('cx', x + w / 2);
+                rotHandle.setAttribute('cy', y - 12);
+                rotHandle.setAttribute('transform', transform);
+            }
         };
 
         // Mouse handlers
@@ -1602,28 +1634,19 @@ class BoothMapSystem {
                 if (e.shiftKey) newAngle = Math.round(newAngle / 5) * 5;
                 const el = state.rotating;
                 el.setAttribute('transform', `rotate(${newAngle.toFixed(1)}, ${cx}, ${cy})`);
-                // Update handles with same transform
-                const resHandle = document.querySelector(`.resize-handle[data-booth-id="${el.id}"]`);
-                const rotHandle = state.rotHandle;
-                if (resHandle) resHandle.setAttribute('transform', `rotate(${newAngle.toFixed(1)}, ${cx}, ${cy})`);
-                if (rotHandle) rotHandle.setAttribute('transform', `rotate(${newAngle.toFixed(1)}, ${cx}, ${cy})`);
+                this._updateHandles(el);
                 this.updatePositionStatus(el.id, parseFloat(el.getAttribute('x')), parseFloat(el.getAttribute('y')), parseFloat(el.getAttribute('width')), parseFloat(el.getAttribute('height')), newAngle);
                 return;
             }
 
             if (state.dragging) {
                 const el = state.dragging;
-                el.setAttribute('x', state.startRect.x + dx);
-                el.setAttribute('y', state.startRect.y + dy);
-                
-                // Move associated resize handle
-                const handle = document.querySelector(`.resize-handle[data-booth-id="${el.id}"]`);
-                if (handle) {
-                    handle.setAttribute('x', state.startRect.x + state.startRect.w + dx - 6);
-                    handle.setAttribute('y', state.startRect.y + state.startRect.h + dy - 6);
-                }
-                
-                this.updatePositionStatus(el.id, state.startRect.x + dx, state.startRect.y + dy, state.startRect.w, state.startRect.h);
+                const newX = state.startRect.x + dx;
+                const newY = state.startRect.y + dy;
+                el.setAttribute('x', newX);
+                el.setAttribute('y', newY);
+                this._updateHandles(el);
+                this.updatePositionStatus(el.id, newX, newY, state.startRect.w, state.startRect.h);
             }
 
             if (state.resizing) {
@@ -1632,13 +1655,7 @@ class BoothMapSystem {
                 const newH = Math.max(10, state.startRect.h + dy);
                 el.setAttribute('width', newW);
                 el.setAttribute('height', newH);
-                
-                // Move handle to follow
-                if (state.handle) {
-                    state.handle.setAttribute('x', state.startRect.x + newW - 6);
-                    state.handle.setAttribute('y', state.startRect.y + newH - 6);
-                }
-                
+                this._updateHandles(el);
                 this.updatePositionStatus(el.id, state.startRect.x, state.startRect.y, newW, newH);
             }
         };
@@ -1922,6 +1939,22 @@ class BoothMapSystem {
     _applyMapZoom() {
         const svg = document.querySelector('#map-content svg');
         if (!svg) return;
+        
+        // Clamp pan so map stays mostly visible
+        const mapContent = document.getElementById('map-content');
+        if (mapContent) {
+            const container = document.querySelector('.map-container');
+            const cw = container ? container.clientWidth : 1200;
+            const ch = container ? container.clientHeight : 800;
+            const vb = svg.viewBox.baseVal;
+            const mapW = (vb.width || 1632) * this._mapZoom;
+            const mapH = (vb.height || 1056) * this._mapZoom;
+            // Allow dragging off by up to 70% of the container size
+            const margin = 0.7;
+            this._panX = Math.max(-mapW + cw * (1 - margin), Math.min(cw * margin, this._panX));
+            this._panY = Math.max(-mapH + ch * (1 - margin), Math.min(ch * margin, this._panY));
+        }
+        
         svg.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._mapZoom})`;
         svg.style.transformOrigin = '0 0';
         const resetBtn = document.getElementById('zoom-reset');
