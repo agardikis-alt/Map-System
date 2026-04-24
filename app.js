@@ -1792,7 +1792,10 @@ class BoothMapSystem {
         this._panStartPanX = 0;
         this._panStartPanY = 0;
 
-        // Scroll-wheel zoom centered on cursor
+        // Wheel handler: pinch-to-zoom OR scroll-to-pan
+        // Trackpad pinch sends wheel events with ctrlKey=true
+        // Normal scroll (two-finger swipe) pans the map
+        // Alt+scroll = zoom with mouse wheel
         mapContainer.addEventListener('wheel', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1800,32 +1803,48 @@ class BoothMapSystem {
             const mapContent = document.getElementById('map-content');
             if (!mapContent) return;
             const rect = mapContent.getBoundingClientRect();
-
-            // Mouse position relative to the map content container
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
 
-            // Point in "map space" before zoom
-            const beforeX = (mouseX - this._panX) / this._mapZoom;
-            const beforeY = (mouseY - this._panY) / this._mapZoom;
+            if (e.ctrlKey) {
+                // Pinch-to-zoom on trackpad (or Ctrl+scroll on mouse)
+                const beforeX = (mouseX - this._panX) / this._mapZoom;
+                const beforeY = (mouseY - this._panY) / this._mapZoom;
 
-            // Apply zoom
-            const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
-            this._mapZoom = Math.max(0.2, Math.min(5, this._mapZoom + zoomDelta));
+                // Trackpad pinch sends small deltaY values, mouse sends larger
+                const zoomFactor = Math.abs(e.deltaY) < 10 ? 0.02 : 0.08;
+                const zoomDelta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
+                this._mapZoom = Math.max(0.15, Math.min(8, this._mapZoom + zoomDelta));
 
-            // Adjust pan so the point under the cursor stays under the cursor
-            this._panX = mouseX - beforeX * this._mapZoom;
-            this._panY = mouseY - beforeY * this._mapZoom;
-
-            this._applyMapZoom();
+                this._panX = mouseX - beforeX * this._mapZoom;
+                this._panY = mouseY - beforeY * this._mapZoom;
+                this._applyMapZoom();
+            } else if (e.altKey) {
+                // Alt+scroll = zoom (for mouse users who prefer this)
+                const beforeX = (mouseX - this._panX) / this._mapZoom;
+                const beforeY = (mouseY - this._panY) / this._mapZoom;
+                const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
+                this._mapZoom = Math.max(0.15, Math.min(8, this._mapZoom + zoomDelta));
+                this._panX = mouseX - beforeX * this._mapZoom;
+                this._panY = mouseY - beforeY * this._mapZoom;
+                this._applyMapZoom();
+            } else {
+                // Normal scroll = pan the map
+                this._panX -= e.deltaX;
+                this._panY -= e.deltaY;
+                this._applyMapZoom();
+            }
         }, { passive: false });
 
-        // Middle-click or Ctrl+click drag to pan
+        // Click-drag to pan (any mouse button)
+        let dragButton = -1;
         mapContainer.addEventListener('mousedown', (e) => {
-            // Middle mouse button OR Ctrl+left click to pan
-            if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
+            // Middle click always pans
+            // Left click pans ONLY if not in position editor mode (so booth dragging still works)
+            if (e.button === 1 || (e.button === 0 && !this.positionMode && !this.drawBoothMode && e.target.closest('#map-zoom-controls') === null)) {
                 e.preventDefault();
                 this._isPanning = true;
+                dragButton = e.button;
                 this._panStartX = e.clientX;
                 this._panStartY = e.clientY;
                 this._panStartPanX = this._panX;
@@ -1866,11 +1885,28 @@ class BoothMapSystem {
         mapContainer.appendChild(controls);
 
         controls.querySelector('#zoom-in').addEventListener('click', () => {
-            this._mapZoom = Math.min(5, this._mapZoom + 0.15);
+            // Zoom toward center of visible area
+            const mapContent = document.getElementById('map-content');
+            const rect = mapContent.getBoundingClientRect();
+            const cx = rect.width / 2;
+            const cy = rect.height / 2;
+            const beforeX = (cx - this._panX) / this._mapZoom;
+            const beforeY = (cy - this._panY) / this._mapZoom;
+            this._mapZoom = Math.min(8, this._mapZoom + 0.2);
+            this._panX = cx - beforeX * this._mapZoom;
+            this._panY = cy - beforeY * this._mapZoom;
             this._applyMapZoom();
         });
         controls.querySelector('#zoom-out').addEventListener('click', () => {
-            this._mapZoom = Math.max(0.2, this._mapZoom - 0.15);
+            const mapContent = document.getElementById('map-content');
+            const rect = mapContent.getBoundingClientRect();
+            const cx = rect.width / 2;
+            const cy = rect.height / 2;
+            const beforeX = (cx - this._panX) / this._mapZoom;
+            const beforeY = (cy - this._panY) / this._mapZoom;
+            this._mapZoom = Math.max(0.15, this._mapZoom - 0.2);
+            this._panX = cx - beforeX * this._mapZoom;
+            this._panY = cy - beforeY * this._mapZoom;
             this._applyMapZoom();
         });
         controls.querySelector('#zoom-reset').addEventListener('click', () => {
@@ -1886,7 +1922,6 @@ class BoothMapSystem {
         if (!svg) return;
         svg.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._mapZoom})`;
         svg.style.transformOrigin = '0 0';
-        // Update zoom indicator
         const resetBtn = document.getElementById('zoom-reset');
         if (resetBtn) resetBtn.textContent = `${Math.round(this._mapZoom * 100)}%`;
     }
