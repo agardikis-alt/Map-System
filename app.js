@@ -1836,15 +1836,17 @@ class BoothMapSystem {
             }
         }, { passive: false });
 
-        // Click-drag to pan (any mouse button)
-        let dragButton = -1;
+        // Right-click drag to pan at any zoom level
+        // This never conflicts with booth clicking/editing
+        mapContainer.addEventListener('contextmenu', (e) => {
+            e.preventDefault(); // Disable right-click menu on map
+        });
+
         mapContainer.addEventListener('mousedown', (e) => {
-            // Middle click always pans
-            // Left click pans ONLY if not in position editor mode (so booth dragging still works)
-            if (e.button === 1 || (e.button === 0 && !this.positionMode && !this.drawBoothMode && e.target.closest('#map-zoom-controls') === null)) {
+            // Right-click (button 2) or middle-click (button 1) = pan
+            if (e.button === 2 || e.button === 1) {
                 e.preventDefault();
                 this._isPanning = true;
-                dragButton = e.button;
                 this._panStartX = e.clientX;
                 this._panStartY = e.clientY;
                 this._panStartPanX = this._panX;
