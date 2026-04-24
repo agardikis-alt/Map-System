@@ -1514,23 +1514,19 @@ class BoothMapSystem {
             svg.appendChild(rotHandle);
         });
 
-        // SVG coordinate helper — accounts for CSS zoom transform
+        // SVG coordinate helper — accounts for CSS zoom on #map-content
         this._getSVGCoords = (e) => {
             const svg = document.querySelector('#map-content svg');
             if (!svg) return { x: 0, y: 0 };
-            const mapContent = document.getElementById('map-content');
-            const rect = mapContent.getBoundingClientRect();
-            // Get mouse position relative to the map-content div
-            const clientX = e.clientX - rect.left;
-            const clientY = e.clientY - rect.top;
-            // Account for zoom and pan
-            const zoom = this._mapZoom || 1;
-            const panX = this._panX || 0;
-            const panY = this._panY || 0;
-            return {
-                x: (clientX - panX) / zoom,
-                y: (clientY - panY) / zoom
-            };
+            // Use SVG's own coordinate system which properly accounts
+            // for the CSS transform on #map-content
+            const pt = svg.createSVGPoint();
+            pt.x = e.clientX;
+            pt.y = e.clientY;
+            const ctm = svg.getScreenCTM();
+            if (!ctm) return { x: 0, y: 0 };
+            const svgPt = pt.matrixTransform(ctm.inverse());
+            return { x: svgPt.x, y: svgPt.y };
         };
 
         // Helper to reposition all handles for a booth
@@ -1776,19 +1772,24 @@ class BoothMapSystem {
 
     fitMapToViewport() {
         const mapContent = document.getElementById('map-content');
-        const svg = mapContent.querySelector('svg');
+        const svg = mapContent ? mapContent.querySelector('svg') : null;
         if (!svg) return;
+        
+        // Clear any leftover inline transform on SVG itself
+        svg.style.transform = '';
+        svg.style.transformOrigin = '';
         
         const container = document.getElementById('map-wrapper');
         const containerRect = container.getBoundingClientRect();
         
-        // Get SVG dimensions
+        // Reset transform temporarily to measure natural size
+        mapContent.style.transform = '';
         const svgRect = svg.getBoundingClientRect();
         
         // Calculate scale to fit
         const scaleX = (containerRect.width - 40) / svgRect.width;
         const scaleY = (containerRect.height - 40) / svgRect.height;
-        const scale = Math.min(scaleX, scaleY, 1); // Don't scale up beyond 100%
+        const scale = Math.min(scaleX, scaleY, 1);
         
         this._mapZoom = scale;
         this._panX = 0;
@@ -1937,26 +1938,25 @@ class BoothMapSystem {
     }
 
     _applyMapZoom() {
-        const svg = document.querySelector('#map-content svg');
-        if (!svg) return;
+        // Transform the map-content div (the white card) so background moves with the SVG
+        const mapContent = document.getElementById('map-content');
+        if (!mapContent) return;
         
         // Clamp pan so map stays mostly visible
-        const mapContent = document.getElementById('map-content');
-        if (mapContent) {
-            const container = document.querySelector('.map-container');
-            const cw = container ? container.clientWidth : 1200;
-            const ch = container ? container.clientHeight : 800;
-            const vb = svg.viewBox.baseVal;
-            const mapW = (vb.width || 1632) * this._mapZoom;
-            const mapH = (vb.height || 1056) * this._mapZoom;
-            // Allow dragging off by up to 70% of the container size
+        const container = document.querySelector('.map-container');
+        if (container) {
+            const cw = container.clientWidth;
+            const ch = container.clientHeight;
+            const mapW = mapContent.scrollWidth * this._mapZoom;
+            const mapH = mapContent.scrollHeight * this._mapZoom;
             const margin = 0.7;
             this._panX = Math.max(-mapW + cw * (1 - margin), Math.min(cw * margin, this._panX));
             this._panY = Math.max(-mapH + ch * (1 - margin), Math.min(ch * margin, this._panY));
         }
         
-        svg.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._mapZoom})`;
-        svg.style.transformOrigin = '0 0';
+        mapContent.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._mapZoom})`;
+        mapContent.style.transformOrigin = '0 0';
+        
         const resetBtn = document.getElementById('zoom-reset');
         if (resetBtn) resetBtn.textContent = `${Math.round(this._mapZoom * 100)}%`;
     }
