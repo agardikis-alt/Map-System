@@ -42,6 +42,7 @@ class BoothMapSystem {
         await this.loadData();
         this.loadCustomEvents();
         this.setupEventListeners();
+        this.setupMapZoom();
         this.renderCategoryFilter();
         this.renderLegend();
         this.loadEvent(this.currentEvent);
@@ -1424,7 +1425,7 @@ class BoothMapSystem {
         }
         toolbar.innerHTML = `
             <div>
-                <strong>POSITION EDITOR</strong> — Drag booths to move | Drag corners to resize
+                <strong>POSITION EDITOR</strong> — Drag to move | Orange corner to resize | Green dot to rotate
                 <span id="pos-status" style="margin-left: 16px; opacity: 0.8;"></span>
             </div>
             <div style="display: flex; gap: 10px;">
@@ -1497,6 +1498,20 @@ class BoothMapSystem {
             if (transform) handle.setAttribute('transform', transform);
             
             svg.appendChild(handle);
+
+            // Add rotation handle (green circle, top-center)
+            const rotHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            rotHandle.setAttribute('cx', x + w / 2);
+            rotHandle.setAttribute('cy', y - 12);
+            rotHandle.setAttribute('r', 5);
+            rotHandle.setAttribute('fill', '#4CAF50');
+            rotHandle.setAttribute('stroke', 'white');
+            rotHandle.setAttribute('stroke-width', '1.5');
+            rotHandle.style.cursor = 'grab';
+            rotHandle.classList.add('rotate-handle');
+            rotHandle.dataset.boothId = booth.id;
+            if (transform) rotHandle.setAttribute('transform', transform);
+            svg.appendChild(rotHandle);
         });
 
         // SVG coordinate helper
@@ -1514,7 +1529,28 @@ class BoothMapSystem {
             const svg = document.querySelector('#map-content svg');
             const pt = this._getSVGCoords(e);
 
-            if (target.classList.contains('resize-handle')) {
+            if (target.classList.contains('rotate-handle')) {
+                // Start rotation
+                const boothEl = document.getElementById(target.dataset.boothId);
+                if (!boothEl) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const bx = parseFloat(boothEl.getAttribute('x')) || 0;
+                const by = parseFloat(boothEl.getAttribute('y')) || 0;
+                const bw = parseFloat(boothEl.getAttribute('width')) || 30;
+                const bh = parseFloat(boothEl.getAttribute('height')) || 30;
+                const cx = bx + bw / 2;
+                const cy = by + bh / 2;
+                // Parse current rotation
+                const curTransform = boothEl.getAttribute('transform') || '';
+                const rotMatch = curTransform.match(/rotate\(\s*([-\d.]+)/);
+                const curAngle = rotMatch ? parseFloat(rotMatch[1]) : 0;
+                this._posState.rotating = boothEl;
+                this._posState.rotHandle = target;
+                this._posState.rotCenter = { x: cx, y: cy };
+                this._posState.rotStartAngle = Math.atan2(pt.y - cy, pt.x - cx) * 180 / Math.PI;
+                this._posState.rotBaseAngle = curAngle;
+            } else if (target.classList.contains('resize-handle')) {
                 // Start resize
                 const boothEl = document.getElementById(target.dataset.boothId);
                 if (!boothEl) return;
@@ -1551,11 +1587,29 @@ class BoothMapSystem {
 
         this._onPosMouseMove = (e) => {
             const state = this._posState;
-            if (!state.dragging && !state.resizing) return;
+            if (!state.dragging && !state.resizing && !state.rotating) return;
             
             const pt = this._getSVGCoords(e);
             const dx = pt.x - state.startX;
             const dy = pt.y - state.startY;
+
+            if (state.rotating) {
+                const cx = state.rotCenter.x;
+                const cy = state.rotCenter.y;
+                const currentAngle = Math.atan2(pt.y - cy, pt.x - cx) * 180 / Math.PI;
+                let newAngle = state.rotBaseAngle + (currentAngle - state.rotStartAngle);
+                // Snap to 5-degree increments when holding Shift
+                if (e.shiftKey) newAngle = Math.round(newAngle / 5) * 5;
+                const el = state.rotating;
+                el.setAttribute('transform', `rotate(${newAngle.toFixed(1)}, ${cx}, ${cy})`);
+                // Update handles with same transform
+                const resHandle = document.querySelector(`.resize-handle[data-booth-id="${el.id}"]`);
+                const rotHandle = state.rotHandle;
+                if (resHandle) resHandle.setAttribute('transform', `rotate(${newAngle.toFixed(1)}, ${cx}, ${cy})`);
+                if (rotHandle) rotHandle.setAttribute('transform', `rotate(${newAngle.toFixed(1)}, ${cx}, ${cy})`);
+                this.updatePositionStatus(el.id, parseFloat(el.getAttribute('x')), parseFloat(el.getAttribute('y')), parseFloat(el.getAttribute('width')), parseFloat(el.getAttribute('height')), newAngle);
+                return;
+            }
 
             if (state.dragging) {
                 const el = state.dragging;
@@ -1591,13 +1645,25 @@ class BoothMapSystem {
 
         this._onPosMouseUp = (e) => {
             const state = this._posState;
+            let changed = false;
             if (state.dragging) {
                 state.dragging.style.opacity = '';
                 state.dragging = null;
+                changed = true;
             }
             if (state.resizing) {
                 state.resizing = null;
                 state.handle = null;
+                changed = true;
+            }
+            if (state.rotating) {
+                state.rotating = null;
+                state.rotHandle = null;
+                changed = true;
+            }
+            // Auto-save after every edit
+            if (changed) {
+                this.saveSvgToStorage(this.currentEvent, false);
             }
         };
 
@@ -1606,11 +1672,13 @@ class BoothMapSystem {
         document.addEventListener('mouseup', this._onPosMouseUp);
     }
 
-    updatePositionStatus(id, x, y, w, h) {
+    updatePositionStatus(id, x, y, w, h, angle) {
         const status = document.getElementById('pos-status');
         if (status) {
             const boothId = id.replace('booth-', '');
-            status.textContent = `Booth ${boothId}: x=${Math.round(x)} y=${Math.round(y)} w=${Math.round(w)} h=${Math.round(h)}`;
+            let info = `Booth ${boothId}: x=${Math.round(x)} y=${Math.round(y)} w=${Math.round(w)} h=${Math.round(h)}`;
+            if (angle !== undefined) info += ` rot=${Math.round(angle)}°`;
+            status.textContent = info;
         }
     }
 
@@ -1625,6 +1693,7 @@ class BoothMapSystem {
 
         // Remove resize handles
         svg.querySelectorAll('.resize-handle').forEach(h => h.remove());
+        svg.querySelectorAll('.rotate-handle').forEach(h => h.remove());
 
         // V2: Auto-save SVG positions to localStorage (no GitHub upload needed)
         this.saveSvgToStorage(this.currentEvent, false); // silent save
@@ -1704,9 +1773,64 @@ class BoothMapSystem {
         const scaleY = (containerRect.height - 40) / svgRect.height;
         const scale = Math.min(scaleX, scaleY, 1); // Don't scale up beyond 100%
         
-        // Apply transform
-        svg.style.transform = `scale(${scale})`;
+        this._mapZoom = scale;
+        this._applyMapZoom();
+    }
+
+    setupMapZoom() {
+        const mapContainer = document.querySelector('.map-container');
+        if (!mapContainer) return;
+
+        this._mapZoom = 1;
+
+        // Scroll-wheel zoom on map only
+        mapContainer.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            this._mapZoom = Math.max(0.2, Math.min(5, this._mapZoom + delta));
+            this._applyMapZoom();
+        }, { passive: false });
+
+        // Add zoom controls overlay
+        const controls = document.createElement('div');
+        controls.id = 'map-zoom-controls';
+        controls.style.cssText = `
+            position: absolute; bottom: 16px; right: 16px; z-index: 50;
+            display: flex; flex-direction: column; gap: 4px;
+            background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            padding: 4px; font-family: Arial, sans-serif;
+        `;
+        controls.innerHTML = `
+            <button id="zoom-in" style="width:36px;height:36px;border:none;background:none;font-size:20px;cursor:pointer;border-radius:4px;">+</button>
+            <button id="zoom-reset" style="width:36px;height:28px;border:none;background:none;font-size:11px;cursor:pointer;border-radius:4px;color:#757575;" title="Reset zoom">FIT</button>
+            <button id="zoom-out" style="width:36px;height:36px;border:none;background:none;font-size:20px;cursor:pointer;border-radius:4px;">−</button>
+        `;
+        mapContainer.style.position = 'relative';
+        mapContainer.appendChild(controls);
+
+        controls.querySelector('#zoom-in').addEventListener('click', () => {
+            this._mapZoom = Math.min(5, this._mapZoom + 0.15);
+            this._applyMapZoom();
+        });
+        controls.querySelector('#zoom-out').addEventListener('click', () => {
+            this._mapZoom = Math.max(0.2, this._mapZoom - 0.15);
+            this._applyMapZoom();
+        });
+        controls.querySelector('#zoom-reset').addEventListener('click', () => {
+            this._mapZoom = 1;
+            this._applyMapZoom();
+        });
+    }
+
+    _applyMapZoom() {
+        const svg = document.querySelector('#map-content svg');
+        if (!svg) return;
+        svg.style.transform = `scale(${this._mapZoom})`;
         svg.style.transformOrigin = 'top left';
+        // Update zoom indicator
+        const resetBtn = document.getElementById('zoom-reset');
+        if (resetBtn) resetBtn.textContent = `${Math.round(this._mapZoom * 100)}%`;
     }
 
     // ===================================================
