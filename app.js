@@ -200,6 +200,7 @@ class BoothMapSystem {
                 mapContent.innerHTML = savedSvg;
                 this.diagnostics.mapLoaded = true;
                 this.normalizeSvgDimensions();
+                this._initViewBox();
                 this.setupBoothInteractions();
                 this.applyBoothColors();
                 this.runBoothDiagnostics();
@@ -224,6 +225,7 @@ class BoothMapSystem {
                 mapContent.innerHTML = savedSvg;
                 this.diagnostics.mapLoaded = true;
                 this.normalizeSvgDimensions();
+                this._initViewBox();
                 this.setupBoothInteractions();
                 this.applyBoothColors();
                 this.runBoothDiagnostics();
@@ -268,6 +270,7 @@ class BoothMapSystem {
             
             // Ensure SVG has proper dimensions
             this.normalizeSvgDimensions();
+                this._initViewBox();
 
             // Setup booth interactions
             this.setupBoothInteractions();
@@ -1514,12 +1517,10 @@ class BoothMapSystem {
             svg.appendChild(rotHandle);
         });
 
-        // SVG coordinate helper — accounts for CSS zoom on #map-content
+        // SVG coordinate helper — getScreenCTM works perfectly with viewBox zoom (no CSS transforms)
         this._getSVGCoords = (e) => {
             const svg = document.querySelector('#map-content svg');
             if (!svg) return { x: 0, y: 0 };
-            // Use SVG's own coordinate system which properly accounts
-            // for the CSS transform on #map-content
             const pt = svg.createSVGPoint();
             pt.x = e.clientX;
             pt.y = e.clientY;
@@ -1771,123 +1772,98 @@ class BoothMapSystem {
     }
 
     fitMapToViewport() {
-        const mapContent = document.getElementById('map-content');
-        const svg = mapContent ? mapContent.querySelector('svg') : null;
+        const svg = document.querySelector('#map-content svg');
         if (!svg) return;
-        
-        // Clear any leftover inline transform on SVG itself
+        // Clear any CSS transforms
         svg.style.transform = '';
-        svg.style.transformOrigin = '';
-        
-        const container = document.getElementById('map-wrapper');
-        const containerRect = container.getBoundingClientRect();
-        
-        // Reset transform temporarily to measure natural size
-        mapContent.style.transform = '';
-        const svgRect = svg.getBoundingClientRect();
-        
-        // Calculate scale to fit
-        const scaleX = (containerRect.width - 40) / svgRect.width;
-        const scaleY = (containerRect.height - 40) / svgRect.height;
-        const scale = Math.min(scaleX, scaleY, 1);
-        
-        this._mapZoom = scale;
-        this._panX = 0;
-        this._panY = 0;
-        this._applyMapZoom();
+        const mapContent = document.getElementById('map-content');
+        if (mapContent) mapContent.style.transform = '';
+        // Reset to natural viewBox
+        if (this._originalViewBox) {
+            const vb = this._originalViewBox;
+            svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+            this._vbX = vb.x; this._vbY = vb.y;
+            this._vbW = vb.w; this._vbH = vb.h;
+        }
+        this._updateZoomDisplay();
     }
 
     setupMapZoom() {
         const mapContainer = document.querySelector('.map-container');
         if (!mapContainer) return;
 
-        this._mapZoom = 1;
-        this._panX = 0;
-        this._panY = 0;
         this._isPanning = false;
-        this._panStartX = 0;
-        this._panStartY = 0;
-        this._panStartPanX = 0;
-        this._panStartPanY = 0;
 
-        // Wheel handler: pinch-to-zoom OR scroll-to-pan
-        // Trackpad pinch sends wheel events with ctrlKey=true
-        // Normal scroll (two-finger swipe) pans the map
-        // Alt+scroll = zoom with mouse wheel
+        // Initialize viewBox tracking after a short delay (SVG needs to load)
+        setTimeout(() => this._initViewBox(), 500);
+
+        // Trackpad/mouse: two-finger scroll = pan, pinch = zoom
         mapContainer.addEventListener('wheel', (e) => {
             e.preventDefault();
             e.stopPropagation();
-
-            const mapContent = document.getElementById('map-content');
-            if (!mapContent) return;
-            const rect = mapContent.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
+            const svg = document.querySelector('#map-content svg');
+            if (!svg || !this._originalViewBox) return;
 
             if (e.ctrlKey) {
-                // Pinch-to-zoom on trackpad (or Ctrl+scroll on mouse)
-                const beforeX = (mouseX - this._panX) / this._mapZoom;
-                const beforeY = (mouseY - this._panY) / this._mapZoom;
-
-                // Trackpad pinch sends small deltaY values, mouse sends larger
-                const zoomFactor = Math.abs(e.deltaY) < 10 ? 0.02 : 0.08;
-                const zoomDelta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
-                this._mapZoom = Math.max(0.15, Math.min(8, this._mapZoom + zoomDelta));
-
-                this._panX = mouseX - beforeX * this._mapZoom;
-                this._panY = mouseY - beforeY * this._mapZoom;
-                this._applyMapZoom();
-            } else if (e.altKey) {
-                // Alt+scroll = zoom (for mouse users who prefer this)
-                const beforeX = (mouseX - this._panX) / this._mapZoom;
-                const beforeY = (mouseY - this._panY) / this._mapZoom;
-                const zoomDelta = e.deltaY > 0 ? -0.1 : 0.1;
-                this._mapZoom = Math.max(0.15, Math.min(8, this._mapZoom + zoomDelta));
-                this._panX = mouseX - beforeX * this._mapZoom;
-                this._panY = mouseY - beforeY * this._mapZoom;
-                this._applyMapZoom();
+                // Pinch-to-zoom — zoom toward cursor
+                const zoomFactor = Math.abs(e.deltaY) < 10 ? 0.015 : 0.06;
+                const zoomDir = e.deltaY > 0 ? 1 + zoomFactor : 1 - zoomFactor;
+                // Get cursor position in SVG space
+                const rect = svg.getBoundingClientRect();
+                const mx = (e.clientX - rect.left) / rect.width;
+                const my = (e.clientY - rect.top) / rect.height;
+                // Zoom viewBox around cursor point
+                const newW = this._vbW * zoomDir;
+                const newH = this._vbH * zoomDir;
+                // Clamp zoom (don't zoom in more than 10x or out more than 2x)
+                const orig = this._originalViewBox;
+                if (newW < orig.w / 10 || newW > orig.w * 2) return;
+                this._vbX += (this._vbW - newW) * mx;
+                this._vbY += (this._vbH - newH) * my;
+                this._vbW = newW;
+                this._vbH = newH;
+                this._applyViewBox();
             } else {
-                // Normal scroll = pan the map
-                this._panX -= e.deltaX;
-                this._panY -= e.deltaY;
-                this._applyMapZoom();
+                // Normal scroll = pan
+                const panSpeed = this._vbW / 800;
+                this._vbX += e.deltaX * panSpeed;
+                this._vbY += e.deltaY * panSpeed;
+                this._applyViewBox();
             }
         }, { passive: false });
 
-        // Right-click drag to pan at any zoom level
-        // This never conflicts with booth clicking/editing
-        mapContainer.addEventListener('contextmenu', (e) => {
-            e.preventDefault(); // Disable right-click menu on map
-        });
-
+        // Right-click drag to pan
+        mapContainer.addEventListener('contextmenu', (e) => e.preventDefault());
         mapContainer.addEventListener('mousedown', (e) => {
-            // Right-click (button 2) or middle-click (button 1) = pan
             if (e.button === 2 || e.button === 1) {
                 e.preventDefault();
                 this._isPanning = true;
-                this._panStartX = e.clientX;
-                this._panStartY = e.clientY;
-                this._panStartPanX = this._panX;
-                this._panStartPanY = this._panY;
+                this._panStartMouse = { x: e.clientX, y: e.clientY };
+                this._panStartVB = { x: this._vbX, y: this._vbY };
                 mapContainer.style.cursor = 'grabbing';
             }
         });
-
         document.addEventListener('mousemove', (e) => {
             if (!this._isPanning) return;
-            this._panX = this._panStartPanX + (e.clientX - this._panStartX);
-            this._panY = this._panStartPanY + (e.clientY - this._panStartY);
-            this._applyMapZoom();
+            const svg = document.querySelector('#map-content svg');
+            if (!svg) return;
+            const rect = svg.getBoundingClientRect();
+            // Convert pixel movement to viewBox movement
+            const scaleX = this._vbW / rect.width;
+            const scaleY = this._vbH / rect.height;
+            this._vbX = this._panStartVB.x - (e.clientX - this._panStartMouse.x) * scaleX;
+            this._vbY = this._panStartVB.y - (e.clientY - this._panStartMouse.y) * scaleY;
+            this._applyViewBox();
         });
-
-        document.addEventListener('mouseup', (e) => {
+        document.addEventListener('mouseup', () => {
             if (this._isPanning) {
                 this._isPanning = false;
-                mapContainer.style.cursor = '';
+                const mapContainer = document.querySelector('.map-container');
+                if (mapContainer) mapContainer.style.cursor = '';
             }
         });
 
-        // Add zoom controls overlay
+        // Zoom controls
         const controls = document.createElement('div');
         controls.id = 'map-zoom-controls';
         controls.style.cssText = `
@@ -1903,62 +1879,68 @@ class BoothMapSystem {
         `;
         mapContainer.style.position = 'relative';
         mapContainer.appendChild(controls);
-
         controls.querySelector('#zoom-in').addEventListener('click', () => {
-            // Zoom toward center of visible area
-            const mapContent = document.getElementById('map-content');
-            const rect = mapContent.getBoundingClientRect();
-            const cx = rect.width / 2;
-            const cy = rect.height / 2;
-            const beforeX = (cx - this._panX) / this._mapZoom;
-            const beforeY = (cy - this._panY) / this._mapZoom;
-            this._mapZoom = Math.min(8, this._mapZoom + 0.2);
-            this._panX = cx - beforeX * this._mapZoom;
-            this._panY = cy - beforeY * this._mapZoom;
-            this._applyMapZoom();
+            if (!this._originalViewBox) return;
+            const cx = this._vbX + this._vbW / 2;
+            const cy = this._vbY + this._vbH / 2;
+            this._vbW *= 0.75; this._vbH *= 0.75;
+            this._vbX = cx - this._vbW / 2;
+            this._vbY = cy - this._vbH / 2;
+            this._applyViewBox();
         });
         controls.querySelector('#zoom-out').addEventListener('click', () => {
-            const mapContent = document.getElementById('map-content');
-            const rect = mapContent.getBoundingClientRect();
-            const cx = rect.width / 2;
-            const cy = rect.height / 2;
-            const beforeX = (cx - this._panX) / this._mapZoom;
-            const beforeY = (cy - this._panY) / this._mapZoom;
-            this._mapZoom = Math.max(0.15, this._mapZoom - 0.2);
-            this._panX = cx - beforeX * this._mapZoom;
-            this._panY = cy - beforeY * this._mapZoom;
-            this._applyMapZoom();
+            if (!this._originalViewBox) return;
+            const cx = this._vbX + this._vbW / 2;
+            const cy = this._vbY + this._vbH / 2;
+            this._vbW *= 1.33; this._vbH *= 1.33;
+            // Clamp to max 2x original
+            const orig = this._originalViewBox;
+            if (this._vbW > orig.w * 2) { this._vbW = orig.w * 2; this._vbH = orig.h * 2; }
+            this._vbX = cx - this._vbW / 2;
+            this._vbY = cy - this._vbH / 2;
+            this._applyViewBox();
         });
-        controls.querySelector('#zoom-reset').addEventListener('click', () => {
-            this._mapZoom = 1;
-            this._panX = 0;
-            this._panY = 0;
-            this._applyMapZoom();
-        });
+        controls.querySelector('#zoom-reset').addEventListener('click', () => this.fitMapToViewport());
     }
 
-    _applyMapZoom() {
-        // Transform the map-content div (the white card) so background moves with the SVG
+    _initViewBox() {
+        const svg = document.querySelector('#map-content svg');
+        if (!svg) return;
+        // Clear any CSS transforms
+        svg.style.transform = '';
         const mapContent = document.getElementById('map-content');
-        if (!mapContent) return;
-        
-        // Clamp pan so map stays mostly visible
-        const container = document.querySelector('.map-container');
-        if (container) {
-            const cw = container.clientWidth;
-            const ch = container.clientHeight;
-            const mapW = mapContent.scrollWidth * this._mapZoom;
-            const mapH = mapContent.scrollHeight * this._mapZoom;
-            const margin = 0.7;
-            this._panX = Math.max(-mapW + cw * (1 - margin), Math.min(cw * margin, this._panX));
-            this._panY = Math.max(-mapH + ch * (1 - margin), Math.min(ch * margin, this._panY));
+        if (mapContent) mapContent.style.transform = '';
+        // Read or set initial viewBox
+        const vb = svg.viewBox.baseVal;
+        if (vb && vb.width > 0) {
+            this._originalViewBox = { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
+        } else {
+            // Fallback: use SVG width/height attributes
+            const w = parseFloat(svg.getAttribute('width')) || 1632;
+            const h = parseFloat(svg.getAttribute('height')) || 1056;
+            svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+            this._originalViewBox = { x: 0, y: 0, w, h };
         }
-        
-        mapContent.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._mapZoom})`;
-        mapContent.style.transformOrigin = '0 0';
-        
+        this._vbX = this._originalViewBox.x;
+        this._vbY = this._originalViewBox.y;
+        this._vbW = this._originalViewBox.w;
+        this._vbH = this._originalViewBox.h;
+        this._updateZoomDisplay();
+    }
+
+    _applyViewBox() {
+        const svg = document.querySelector('#map-content svg');
+        if (!svg) return;
+        svg.setAttribute('viewBox', `${this._vbX} ${this._vbY} ${this._vbW} ${this._vbH}`);
+        this._updateZoomDisplay();
+    }
+
+    _updateZoomDisplay() {
         const resetBtn = document.getElementById('zoom-reset');
-        if (resetBtn) resetBtn.textContent = `${Math.round(this._mapZoom * 100)}%`;
+        if (resetBtn && this._originalViewBox) {
+            const zoom = Math.round((this._originalViewBox.w / (this._vbW || this._originalViewBox.w)) * 100);
+            resetBtn.textContent = `${zoom}%`;
+        }
     }
 
     // ===================================================
