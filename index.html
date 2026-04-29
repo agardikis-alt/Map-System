@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BoothMap Pro — Vendor Management</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <h1><span style="color:var(--accent);">Booth</span>Map</h1>
+            <div class="controls">
+                <div class="select-wrapper">
+                    <select id="event-select">
+                        <option value="offstreet">Off Street Arts &amp; Crafts</option>
+                        <option value="territorial">Territorial Days Show</option>
+                        <option value="fallshow">Fall Show</option>
+                        <option value="laborday">Labor Day Festival</option>
+                        <option value="bluegrass">Bluegrass Festival</option>
+                    </select>
+                </div>
+                <button id="btn-fit-map" class="btn btn-sm btn-secondary" title="Fit map to viewport">Fit View</button>
+                <button id="btn-position-mode" class="btn btn-sm btn-secondary" title="Edit booth positions">Edit Positions</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <div class="section-title">Search &amp; Filter</div>
+                <input type="text" id="search-input" class="search-box" placeholder="Search booths, vendors, categories...">
+                <div class="filter-group">
+                    <select id="category-filter"><option value="all">All Categories</option></select>
+                    <select id="status-filter">
+                        <option value="all">All Statuses</option>
+                        <option value="assigned">Assigned</option>
+                        <option value="open">Open</option>
+                        <option value="unavailable">Unavailable</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="section-title">Statistics</div>
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-value primary" id="stat-total">0</div><div class="stat-label">Total Booths</div></div>
+                    <div class="stat-card"><div class="stat-value success" id="stat-assigned">0</div><div class="stat-label">Assigned</div></div>
+                    <div class="stat-card"><div class="stat-value accent" id="stat-open">0</div><div class="stat-label">Available</div></div>
+                    <div class="stat-card"><div class="stat-value danger" id="stat-unavailable">0</div><div class="stat-label">Unavailable</div></div>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="section-title">Legend</div>
+                <div class="legend-container" id="legend-container"></div>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="section-title">GitHub Sync</div>
+                <div id="github-sync-container"></div>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="section-title">Tools</div>
+                <div class="button-group">
+                    <button id="btn-export" class="btn btn-primary btn-sm">Export Data</button>
+                    <button id="btn-export-map" class="btn btn-primary btn-sm">Export Map</button>
+                    <button id="btn-import" class="btn btn-secondary btn-sm">Import Data</button>
+                    <input type="file" id="import-file" accept=".json" style="display:none;">
+                    <button id="btn-reset" class="btn btn-danger btn-sm">Reset Map</button>
+                    <button id="btn-copy-template" class="btn btn-secondary btn-sm">Copy Layout</button>
+                    <button id="btn-paste-template" class="btn btn-secondary btn-sm">Paste Layout</button>
+                    <button id="btn-upload-map" class="btn btn-secondary btn-sm">Upload Map</button>
+                    <button id="btn-delete-event" class="btn btn-danger btn-sm" style="display:none;">Delete Event</button>
+                    <button id="btn-diagnostics" class="btn btn-secondary btn-sm">Diagnostics</button>
+                    <button id="btn-print" class="btn btn-secondary btn-sm">Print</button>
+                </div>
+                <div id="diagnostics-panel" class="hidden">
+                    <div id="diagnostics-content"></div>
+                </div>
+            </div>
+        </aside>
+
+        <section class="map-section">
+            <div class="map-header">
+                <h2 id="event-title" class="event-title">Off Street Arts &amp; Crafts</h2>
+                <div class="map-toolbar"></div>
+            </div>
+            <div class="map-container" id="map-wrapper">
+                <div id="map-content"></div>
+            </div>
+        </section>
+
+        <aside class="detail-panel">
+            <div class="detail-header">
+                <h2>Booth Details</h2>
+                <button id="close-detail" class="btn-close">&times;</button>
+            </div>
+            <div id="detail-content"><p class="no-selection">Click a booth to view details</p></div>
+        </aside>
+    </div>
+
+    <!-- Edit Booth Modal -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header"><h3>Edit Booth</h3><button id="close-modal" class="btn-close">&times;</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-booth-id">
+                <div class="form-group"><label>Vendor Name</label><input type="text" id="edit-vendor-name" placeholder="Enter vendor name"></div>
+                <div class="form-group"><label>Business Name</label><input type="text" id="edit-business-name" placeholder="Enter business name"></div>
+                <div class="form-group"><label>Category</label><select id="edit-category"></select></div>
+                <div class="form-group"><label>Status</label><select id="edit-status"><option value="open">Open</option><option value="assigned">Assigned</option><option value="unavailable">Unavailable</option></select></div>
+                <div class="form-group"><label>Phone</label><input type="tel" id="edit-phone" placeholder="(555) 123-4567"></div>
+                <div class="form-group"><label>Email</label><input type="email" id="edit-email" placeholder="vendor@example.com"></div>
+                <div class="form-group"><label>Notes</label><textarea id="edit-notes" placeholder="Additional notes..."></textarea></div>
+            </div>
+            <div class="modal-footer"><button id="btn-cancel" class="btn btn-secondary">Cancel</button><button id="btn-save" class="btn btn-primary">Save Changes</button></div>
+        </div>
+    </div>
+
+    <!-- New Booth Modal -->
+    <div id="new-booth-modal" class="modal">
+        <div class="modal-content" style="max-width:380px;">
+            <div class="modal-header"><h3>New Booth</h3><button class="btn-close" onclick="document.getElementById('new-booth-modal').classList.remove('active')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Booth ID *</label><input type="text" id="new-booth-id" placeholder="e.g., A-42"><div class="error-msg">This ID already exists</div></div>
+                <div class="form-group"><label>Map Label</label><input type="text" id="new-booth-label" placeholder="Optional display label"></div>
+            </div>
+            <div class="modal-footer"><button id="cancel-new-booth" class="btn btn-secondary">Cancel</button><button id="confirm-new-booth" class="btn btn-primary">Create</button></div>
+        </div>
+    </div>
+
+    <!-- Rename Booth Modal -->
+    <div id="rename-booth-modal" class="modal">
+        <div class="modal-content" style="max-width:380px;">
+            <div class="modal-header"><h3>Rename Booth</h3><button class="btn-close" onclick="document.getElementById('rename-booth-modal').classList.remove('active')">&times;</button></div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">Old ID: <strong id="rename-old-id"></strong></p>
+                <div class="form-group"><label>New Booth ID *</label><input type="text" id="rename-new-id" placeholder="e.g., A-42"></div>
+                <div class="form-group"><label>New Map Label</label><input type="text" id="rename-new-label" placeholder="Optional display label"></div>
+            </div>
+            <div class="modal-footer"><button id="cancel-rename-booth" class="btn btn-secondary">Cancel</button><button id="confirm-rename-booth" class="btn btn-primary">Rename</button></div>
+        </div>
+    </div>
+
+    <!-- Upload Map Modal -->
+    <div id="upload-map-modal" class="modal">
+        <div class="modal-content" style="max-width:460px;">
+            <div class="modal-header"><h3>Upload New Map</h3><button class="btn-close" onclick="document.getElementById('upload-map-modal').classList.remove('active')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Event Name *</label><input type="text" id="upload-event-name" placeholder="e.g., Spring Fair 2026"></div>
+                <div class="form-group"><label>Map Image *</label><div class="upload-zone" id="upload-drop-zone"><input type="file" id="upload-map-file" accept=".png,.jpg,.jpeg,.svg" style="display:none;"><div class="upload-prompt"><div class="upload-icon">+</div><div class="upload-text">Click or drag PNG, JPEG, or SVG here</div><div class="upload-types">PNG — High quality • JPEG — Small file • SVG — Editable vector</div></div></div><div id="upload-preview" class="upload-preview hidden"></div></div>
+                <div class="form-group"><label>Map Width (optional)</label><input type="number" id="upload-map-width" placeholder="Auto-detect"><div class="hint">Override auto-detected width in pixels</div></div>
+                <div class="form-group"><label>Map Height (optional)</label><input type="number" id="upload-map-height" placeholder="Auto-detect"><div class="hint">Override auto-detected height in pixels</div></div>
+            </div>
+            <div class="modal-footer"><button id="cancel-upload-map" class="btn btn-secondary">Cancel</button><button id="confirm-upload-map" class="btn btn-primary">Create Event</button></div>
+        </div>
+    </div>
+
+    <!-- Copy Template Modal -->
+    <div id="copy-template-modal" class="modal">
+        <div class="modal-content" style="max-width:420px;">
+            <div class="modal-header"><h3>Copy as Template</h3><button class="btn-close" onclick="document.getElementById('copy-template-modal').classList.remove('active')">&times;</button></div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:var(--text-sec);margin-bottom:12px;">Save the current booth and shape layout as a reusable template. <strong>All vendor data will be removed</strong> — only positions, sizes, and shapes are saved.</p>
+                <div class="form-group"><label>Template Name *</label><input type="text" id="copy-template-name" placeholder="e.g., OffStreet Standard Layout"></div>
+                <div class="form-group"><label>Booths to include</label><select id="copy-template-filter"><option value="all">All booths</option><option value="assigned">Assigned only</option><option value="open">Open only</option></select></div>
+                <div class="saved-templates" id="saved-templates-list"><div class="section-title" style="margin-top:16px;">Saved Templates</div><div id="templates-list-content" style="font-size:12px;color:var(--text-sec);">No templates saved yet</div></div>
+            </div>
+            <div class="modal-footer"><button id="cancel-copy-template" class="btn btn-secondary">Cancel</button><button id="confirm-copy-template" class="btn btn-primary">Save Template</button></div>
+        </div>
+    </div>
+
+    <!-- Paste Template Modal -->
+    <div id="paste-template-modal" class="modal">
+        <div class="modal-content" style="max-width:440px;">
+            <div class="modal-header"><h3>Paste Template</h3><button class="btn-close" onclick="document.getElementById('paste-template-modal').classList.remove('active')">&times;</button></div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:var(--text-sec);margin-bottom:12px;">Select a saved template to overlay on <strong id="paste-target-name">this map</strong>. You can drag the entire layout to align it, then click away to place individual booths.</p>
+                <div id="paste-templates-list" class="paste-templates-list"><div style="font-size:12px;color:var(--text-sec);padding:20px;text-align:center;">No templates available. Copy a template first.</div></div>
+            </div>
+            <div class="modal-footer"><button id="cancel-paste-template" class="btn btn-secondary">Cancel</button></div>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip"><div class="tooltip-title"></div><div class="tooltip-info"></div></div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
