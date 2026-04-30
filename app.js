@@ -33,6 +33,7 @@ export class BoothMapSystem {
         this._panning = false;
         this._panOn = false;
 
+        this.boothOpacity = 0.8;
         this.github = { token:'', gistId:'', autoSync:false, lastSync:null };
 
         this.init();
@@ -408,7 +409,7 @@ export class BoothMapSystem {
         window.addEventListener('mousemove', this._tplOnMm);
         window.addEventListener('mouseup', this._tplOnMu);
         container.addEventListener('wheel', this._tplOnWheel, { passive: false });
-        container.addEventListener('click', this._tplOnClick);
+        setTimeout(() => container.addEventListener('click', this._tplOnClick), 400);
         document.addEventListener('keydown', this._tplOnKey);
 
         banner.querySelector('#tpl-cancel').addEventListener('click', () => this._cancelTemplateAlign());
@@ -550,10 +551,20 @@ export class BoothMapSystem {
         const b=document.getElementById('vp-fit'); if(b)b.textContent=`${Math.round(this._zoom*100)}%`;
     }
     fitView(){
-        const svg=document.querySelector('#map-content svg'); if(!svg)return;
-        // Reset: SVG naturally fills container via CSS (width:100%;height:100%)
-        // Zoom=1 means "fit to container". Zoom>1 means zoomed in.
-        this._zoom=1; this._panX=0; this._panY=0;
+        const svg=document.querySelector('#map-content svg');
+        const container=document.querySelector('.map-container');
+        if(!svg||!container){this._zoom=1;this._panX=0;this._panY=0;this._applyView();return;}
+        const vb=svg.getAttribute('viewBox');
+        if(vb){
+            const [vx,vy,vw,vh]=vb.split(/[\s,]+/).map(parseFloat);
+            const cw=container.clientWidth, ch=container.clientHeight;
+            const scale=Math.min(cw/vw, ch/vh)*0.96;
+            this._zoom=scale;
+            this._panX=(cw-vw*scale)/2 - vx*scale;
+            this._panY=(ch-vh*scale)/2 - vy*scale;
+        } else {
+            this._zoom=1; this._panX=0; this._panY=0;
+        }
         this._applyView();
     }
     _togglePan(){this._panOn=!this._panOn;document.querySelector('.map-container').style.cursor=this._panOn?'grab':'';const b=document.getElementById('vp-hand');if(b){b.style.background=this._panOn?'#1565C0':'transparent';b.style.color=this._panOn?'white':'';}}
@@ -730,13 +741,14 @@ export class BoothMapSystem {
     // ===== MORE VISIBLE COLORS =====
     applyColors() {
         const d=this.eventsData[this.currentEvent]; if(!d?.booths)return;
+        const opacity = this.boothOpacity !== undefined ? this.boothOpacity : 0.8;
         Object.entries(d.booths).forEach(([bid,b])=>{
             let el=document.getElementById(`booth-${bid}`)||document.getElementById(bid)||document.querySelector(`[id*="${bid}"].booth`);
             if(!el)return;
             const cat=this.categories[b.vendorCategory]||this.categories['Open'];
-            if(b.boothStatus==='open'){el.style.fill='rgba(255,255,255,0.2)';el.style.stroke='rgba(130,130,130,0.5)';el.style.strokeWidth='1';}
+            if(b.boothStatus==='open'){el.style.fill=`rgba(255,255,255,${Math.max(0.08,opacity*0.25)})`;el.style.stroke='rgba(130,130,130,0.5)';el.style.strokeWidth='1';}
             else if(b.boothStatus==='unavailable'){el.style.fill='rgba(100,100,100,0.55)';el.style.stroke='#555';el.style.strokeWidth='2';}
-            else{const rgb=this.hexToRgb(cat.bgColor||'#FCE4EC');el.style.fill=rgb?`rgba(${rgb.r},${rgb.g},${rgb.b},0.8)`:cat.bgColor;el.style.stroke=cat.borderColor||'#333';el.style.strokeWidth='2.5';}
+            else{const rgb=this.hexToRgb(cat.bgColor||'#FCE4EC');el.style.fill=rgb?`rgba(${rgb.r},${rgb.g},${rgb.b},${opacity})`:cat.bgColor;el.style.stroke=cat.borderColor||'#333';el.style.strokeWidth='2.5';}
         });
     }
     hexToRgb(h){const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h);return r?{r:parseInt(r[1],16),g:parseInt(r[2],16),b:parseInt(r[3],16)}:null;}
@@ -756,16 +768,13 @@ export class BoothMapSystem {
     renderCategoryFilter(){const s=document.getElementById('category-filter');s.innerHTML='<option value="all">All Categories</option>';Object.keys(this.categories).forEach(c=>{if(c==='Open'||c==='Unavailable')return;const o=document.createElement('option');o.value=c;o.textContent=c;s.appendChild(o);});}
     renderLegend(){const c=document.getElementById('legend-container');c.innerHTML='';Object.entries(this.categories).forEach(([n,colors])=>{const i=document.createElement('div');i.className='legend-item';i.innerHTML=`<span class="legend-color" style="background:${colors.bgColor};border-color:${colors.borderColor};"></span><span>${n}</span>`;c.appendChild(i);});}
     updateStats(){
-        // Count from DOM (actual elements on the map) — this is the source of truth for "Total"
         const domBooths = document.querySelectorAll('.booth');
         const total = domBooths.length;
-        // Count statuses from data
         const d = this.eventsData[this.currentEvent];
         const dataBooths = d?.booths ? Object.values(d.booths) : [];
-        // If DOM has more booths than data, the extras are "open" (not yet in data)
-        const assigned = dataBooths.filter(x => x.boothStatus === 'assigned').length;
-        const unavailable = dataBooths.filter(x => x.boothStatus === 'unavailable').length;
-        // Open = total - assigned - unavailable (includes DOM-only booths)
+        const domIds = new Set(Array.from(domBooths).map(b => this.extractId(b.id) || b.id));
+        const assigned = dataBooths.filter(x => domIds.has(x.boothId) && x.boothStatus === 'assigned').length;
+        const unavailable = dataBooths.filter(x => domIds.has(x.boothId) && x.boothStatus === 'unavailable').length;
         const open = Math.max(0, total - assigned - unavailable);
         document.getElementById('stat-total').textContent = total;
         document.getElementById('stat-assigned').textContent = assigned;
@@ -1964,6 +1973,11 @@ export class BoothMapSystem {
         document.getElementById('category-filter').addEventListener('change', (e) => { this.categoryFilter = e.target.value; this.applyFilters(); });
         document.getElementById('status-filter').addEventListener('change', (e) => { this.statusFilter = e.target.value; this.applyFilters(); });
 
+        document.getElementById('booth-opacity').addEventListener('input', (e) => {
+            this.boothOpacity = parseFloat(e.target.value);
+            document.getElementById('opacity-val').textContent = Math.round(this.boothOpacity * 100) + '%';
+            this.applyColors();
+        });
         document.getElementById('btn-export').addEventListener('click', () => this.exportData());
         document.getElementById('btn-export-map').addEventListener('click', () => this.showExportMapDlg());
         document.getElementById('btn-import').addEventListener('click', () => document.getElementById('import-file').click());
