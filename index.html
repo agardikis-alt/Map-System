@@ -236,6 +236,8 @@ body {
     position: sticky; top: 74px;
     display: flex; flex-direction: column;
     border: 1px solid rgba(255,255,255,0.05);
+    z-index: 10;
+    pointer-events: auto;
 }
 .sidebar::-webkit-scrollbar { width: 3px; }
 .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
@@ -1029,10 +1031,21 @@ class BoothMapSystem {
             if(b&&b.width>0) svg.setAttribute('viewBox',`${b.x} ${b.y} ${b.width} ${b.height}`);
         }
         svg.style.display='block';
-        svg.style.width='100%';
-        svg.style.height='100%';
+        svg.style.position='absolute';
+        svg.style.top='0';
+        svg.style.left='0';
+        // Set SVG to its viewBox pixel dimensions so transform-based zoom/pan works correctly
+        const vb=svg.getAttribute('viewBox');
+        if(vb){
+            const parts=vb.split(/[\s,]+/).map(parseFloat);
+            svg.style.width=parts[2]+'px';
+            svg.style.height=parts[3]+'px';
+        } else {
+            svg.style.width='100%';
+            svg.style.height='100%';
+        }
         this.setupBoothInteractions(); this.applyColors(); this.updateStats();
-        setTimeout(() => this.fitView(), 50);
+        setTimeout(() => this.fitView(), 150);
     }
 
     normId(raw){return raw?String(raw).trim().replace(/^booth[_-]/i,''):null;}
@@ -1434,10 +1447,23 @@ class BoothMapSystem {
         const b=document.getElementById('vp-fit'); if(b)b.textContent=`${Math.round(this._zoom*100)}%`;
     }
     fitView(){
-        const svg=document.querySelector('#map-content svg'); if(!svg)return;
-        this._zoom=1; this._panX=0; this._panY=0;
-        svg.setAttribute('preserveAspectRatio','xMidYMin meet');
-        this._applyView();
+        const svg=document.querySelector('#map-content svg');
+        const container=document.querySelector('.map-container');
+        if(!svg||!container) return;
+        const vb=svg.getAttribute('viewBox');
+        if(!vb){ this._zoom=1;this._panX=0;this._panY=0;this._applyView();return; }
+        const tryFit=()=>{
+            const cw=container.clientWidth, ch=container.clientHeight;
+            if(!cw||!ch){ setTimeout(tryFit,100); return; }
+            const parts=vb.split(/[\s,]+/).map(parseFloat);
+            const vx=parts[0],vy=parts[1],vw=parts[2],vh=parts[3];
+            const scale=Math.min(cw/vw, ch/vh)*0.96;
+            this._zoom=scale;
+            this._panX=(cw-vw*scale)/2 - vx*scale;
+            this._panY=(ch-vh*scale)/2 - vy*scale;
+            this._applyView();
+        };
+        tryFit();
     }
     _togglePan(){this._panOn=!this._panOn;document.querySelector('.map-container').style.cursor=this._panOn?'grab':'';const b=document.getElementById('vp-hand');if(b){b.style.background=this._panOn?'#1565C0':'transparent';b.style.color=this._panOn?'white':'';}}
 
@@ -2915,9 +2941,7 @@ class BoothMapSystem {
     _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 }
 
-
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
     window.boothMap = new BoothMapSystem();
 });
 </script>
