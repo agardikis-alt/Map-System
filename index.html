@@ -236,8 +236,6 @@ body {
     position: sticky; top: 74px;
     display: flex; flex-direction: column;
     border: 1px solid rgba(255,255,255,0.05);
-    z-index: 10;
-    pointer-events: auto;
 }
 .sidebar::-webkit-scrollbar { width: 3px; }
 .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
@@ -677,6 +675,46 @@ body {
     .map-section { box-shadow: none !important; height: auto !important; }
 }
 
+/* ===== MAP FIT OVERRIDES ===== */
+.map-section {
+    height: calc(100vh - 100px) !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    isolation: isolate !important;
+}
+.map-container {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+#map-wrapper {
+    position: absolute !important;
+    inset: 0 !important;
+    overflow: hidden !important;
+}
+#map-content {
+    position: absolute !important;
+    inset: 0 !important;
+    overflow: hidden !important;
+}
+/* SVG always fills container; transform-origin 0 0 for zoom math */
+#map-content svg {
+    display: block !important;
+    position: absolute !important;
+    top: 0 !important; left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    transform-origin: 0 0 !important;
+    preserveAspectRatio: xMidYMid meet;
+}
+/* Sidebar always on top and scrollable */
+.sidebar {
+    z-index: 10 !important;
+    pointer-events: auto !important;
+    overflow-y: auto !important;
+}
+
     </style>
 </head>
 <body>
@@ -1030,22 +1068,13 @@ class BoothMapSystem {
             const b=svg.getBBox?svg.getBBox():null;
             if(b&&b.width>0) svg.setAttribute('viewBox',`${b.x} ${b.y} ${b.width} ${b.height}`);
         }
+        svg.setAttribute('preserveAspectRatio','xMidYMid meet');
         svg.style.display='block';
-        svg.style.position='absolute';
-        svg.style.top='0';
-        svg.style.left='0';
-        // Set SVG to its viewBox pixel dimensions so transform-based zoom/pan works correctly
-        const vb=svg.getAttribute('viewBox');
-        if(vb){
-            const parts=vb.split(/[\s,]+/).map(parseFloat);
-            svg.style.width=parts[2]+'px';
-            svg.style.height=parts[3]+'px';
-        } else {
-            svg.style.width='100%';
-            svg.style.height='100%';
-        }
+        svg.style.width='100%';
+        svg.style.height='100%';
+        svg.style.transformOrigin='0 0';
         this.setupBoothInteractions(); this.applyColors(); this.updateStats();
-        setTimeout(() => this.fitView(), 150);
+        setTimeout(() => this.fitView(), 100);
     }
 
     normId(raw){return raw?String(raw).trim().replace(/^booth[_-]/i,''):null;}
@@ -1447,23 +1476,10 @@ class BoothMapSystem {
         const b=document.getElementById('vp-fit'); if(b)b.textContent=`${Math.round(this._zoom*100)}%`;
     }
     fitView(){
-        const svg=document.querySelector('#map-content svg');
-        const container=document.querySelector('.map-container');
-        if(!svg||!container) return;
-        const vb=svg.getAttribute('viewBox');
-        if(!vb){ this._zoom=1;this._panX=0;this._panY=0;this._applyView();return; }
-        const tryFit=()=>{
-            const cw=container.clientWidth, ch=container.clientHeight;
-            if(!cw||!ch){ setTimeout(tryFit,100); return; }
-            const parts=vb.split(/[\s,]+/).map(parseFloat);
-            const vx=parts[0],vy=parts[1],vw=parts[2],vh=parts[3];
-            const scale=Math.min(cw/vw, ch/vh)*0.96;
-            this._zoom=scale;
-            this._panX=(cw-vw*scale)/2 - vx*scale;
-            this._panY=(ch-vh*scale)/2 - vy*scale;
-            this._applyView();
-        };
-        tryFit();
+        const svg=document.querySelector('#map-content svg'); if(!svg)return;
+        svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+        this._zoom=1; this._panX=0; this._panY=0;
+        this._applyView();
     }
     _togglePan(){this._panOn=!this._panOn;document.querySelector('.map-container').style.cursor=this._panOn?'grab':'';const b=document.getElementById('vp-hand');if(b){b.style.background=this._panOn?'#1565C0':'transparent';b.style.color=this._panOn?'white':'';}}
 
