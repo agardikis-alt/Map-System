@@ -41,10 +41,10 @@ export class BoothMapSystem {
 
     async init() {
         this._loadGh();
-        await this.loadData();
-        this.loadCustomEvents();
-        this.setupListeners();
-        this.setupViewport();
+        try { await this.loadData(); } catch(e) { console.error('loadData:', e); }
+        try { this.loadCustomEvents(); } catch(e) { console.error('loadCustomEvents:', e); }
+        try { this.setupListeners(); } catch(e) { console.error('setupListeners:', e); }
+        try { this.setupViewport(); } catch(e) { console.error('setupViewport:', e); }
         this.renderCategoryFilter();
         this.renderLegend();
         this.loadEvent(this.currentEvent);
@@ -1956,48 +1956,56 @@ export class BoothMapSystem {
     }
 
     // ===== EVENT LISTENERS =====
-    setupListeners() {
-        document.getElementById('event-select').addEventListener('change', (e) => this.loadEvent(e.target.value));
-        document.getElementById('search-input').addEventListener('input', (e) => { this.searchTerm = e.target.value.toLowerCase(); this.applyFilters(); });
-        document.getElementById('category-filter').addEventListener('change', (e) => { this.categoryFilter = e.target.value; this.applyFilters(); });
-        document.getElementById('status-filter').addEventListener('change', (e) => { this.statusFilter = e.target.value; this.applyFilters(); });
+    // Safe event listener helper — never throws if element missing
+    _on(id, event, handler) {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener(event, handler);
+    }
 
-        const opacityEl = document.getElementById('booth-opacity');
-        if(opacityEl) opacityEl.addEventListener('input', (e) => {
+    setupListeners() {
+        this._on('event-select', 'change', (e) => this.loadEvent(e.target.value));
+        this._on('search-input', 'input', (e) => { this.searchTerm = e.target.value.toLowerCase(); this.applyFilters(); });
+        this._on('category-filter', 'change', (e) => { this.categoryFilter = e.target.value; this.applyFilters(); });
+        this._on('status-filter', 'change', (e) => { this.statusFilter = e.target.value; this.applyFilters(); });
+
+        this._on('booth-opacity', 'input', (e) => {
             this.boothOpacity = parseFloat(e.target.value);
             const valEl = document.getElementById('opacity-val');
             if(valEl) valEl.textContent = Math.round(this.boothOpacity * 100) + '%';
             this.applyColors();
         });
-        document.getElementById('btn-export').addEventListener('click', () => this.exportData());
-        document.getElementById('btn-export-map').addEventListener('click', () => this.showExportMapDlg());
-        document.getElementById('btn-import').addEventListener('click', () => document.getElementById('import-file').click());
-        document.getElementById('import-file').addEventListener('change', (e) => { if (e.target.files?.length) { this.importData(e.target.files[0]); e.target.value = ''; } });
-        document.getElementById('btn-reset').addEventListener('click', () => this._resetMap());
-        document.getElementById('btn-copy-template').addEventListener('click', () => this._showCopyTemplateDlg());
-        document.getElementById('btn-print').addEventListener('click', () => window.print());
-        document.getElementById('btn-diagnostics').addEventListener('click', () => this.toggleDiagnostics());
-        document.getElementById('btn-upload-map').addEventListener('click', () => this._showUploadDlg());
-        document.getElementById('btn-paste-template').addEventListener('click', () => this._showPasteTemplateDlg());
-        document.getElementById('btn-delete-event').addEventListener('click', () => this._deleteCustom(this.currentEvent));
-        document.getElementById('btn-fit-map').addEventListener('click', () => this.fitView());
-        document.getElementById('btn-position-mode').addEventListener('click', () => this.togglePositionMode());
 
-        document.getElementById('confirm-new-booth').addEventListener('click', () => this._confirmBooth());
-        document.getElementById('cancel-new-booth').addEventListener('click', () => { document.getElementById('new-booth-modal').classList.remove('active'); });
-        document.getElementById('confirm-rename-booth').addEventListener('click', () => this._confirmRename());
-        document.getElementById('cancel-rename-booth').addEventListener('click', () => document.getElementById('rename-booth-modal').classList.remove('active'));
-        document.getElementById('confirm-upload-map').addEventListener('click', () => this._confirmUpload());
-        document.getElementById('cancel-upload-map').addEventListener('click', () => document.getElementById('upload-map-modal').classList.remove('active'));
-        document.getElementById('confirm-copy-template').addEventListener('click', () => this._confirmCopyTemplate());
-        document.getElementById('cancel-copy-template').addEventListener('click', () => document.getElementById('copy-template-modal').classList.remove('active'));
-        document.getElementById('cancel-paste-template').addEventListener('click', () => document.getElementById('paste-template-modal').classList.remove('active'));
+        this._on('btn-export', 'click', () => this.exportData());
+        this._on('btn-export-map', 'click', () => this.showExportMapDlg());
+        this._on('btn-import', 'click', () => document.getElementById('import-file')?.click());
+        this._on('import-file', 'change', (e) => { if (e.target.files?.length) { this.importData(e.target.files[0]); e.target.value = ''; } });
+        this._on('btn-reset', 'click', () => this._resetMap());
+        this._on('btn-copy-template', 'click', () => this._showCopyTemplateDlg());
+        this._on('btn-print', 'click', () => window.print());
+        this._on('btn-diagnostics', 'click', () => this.toggleDiagnostics());
+        this._on('btn-upload-map', 'click', () => this._showUploadDlg());
+        this._on('btn-paste-template', 'click', () => this._showPasteTemplateDlg());
+        this._on('btn-delete-event', 'click', () => this._deleteCustom(this.currentEvent));
+        this._on('btn-fit-map', 'click', () => this.fitView());
+        this._on('btn-position-mode', 'click', () => this.togglePositionMode());
 
-        document.getElementById('close-detail').addEventListener('click', () => this.closeDetail());
-        document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
-        document.getElementById('btn-cancel').addEventListener('click', () => this.closeModal());
-        document.getElementById('btn-save').addEventListener('click', () => this.saveBoothEdit());
-        document.getElementById('edit-modal').addEventListener('click', (e) => { if (e.target.id === 'edit-modal') this.closeModal(); });
+        this._on('confirm-new-booth', 'click', () => this._confirmBooth());
+        this._on('cancel-new-booth', 'click', () => document.getElementById('new-booth-modal')?.classList.remove('active'));
+        this._on('confirm-rename-booth', 'click', () => this._confirmRename());
+        this._on('cancel-rename-booth', 'click', () => document.getElementById('rename-booth-modal')?.classList.remove('active'));
+        this._on('confirm-upload-map', 'click', () => this._confirmUpload());
+        this._on('cancel-upload-map', 'click', () => document.getElementById('upload-map-modal')?.classList.remove('active'));
+        this._on('confirm-copy-template', 'click', () => this._confirmCopyTemplate());
+        this._on('cancel-copy-template', 'click', () => document.getElementById('copy-template-modal')?.classList.remove('active'));
+        this._on('cancel-paste-template', 'click', () => document.getElementById('paste-template-modal')?.classList.remove('active'));
+
+        this._on('close-detail', 'click', () => this.closeDetail());
+        this._on('close-modal', 'click', () => this.closeModal());
+        this._on('btn-cancel', 'click', () => this.closeModal());
+        this._on('btn-save', 'click', () => this.saveBoothEdit());
+
+        const editModal = document.getElementById('edit-modal');
+        if (editModal) editModal.addEventListener('click', (e) => { if (e.target.id === 'edit-modal') this.closeModal(); });
 
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') { document.querySelectorAll('.modal.active').forEach(m => m.classList.remove('active')); if (this.drawMode) this._exitDraw(); }
