@@ -551,20 +551,9 @@ export class BoothMapSystem {
         const b=document.getElementById('vp-fit'); if(b)b.textContent=`${Math.round(this._zoom*100)}%`;
     }
     fitView(){
-        const svg=document.querySelector('#map-content svg');
-        const container=document.querySelector('.map-container');
-        if(!svg||!container){this._zoom=1;this._panX=0;this._panY=0;this._applyView();return;}
-        const vb=svg.getAttribute('viewBox');
-        if(vb){
-            const [vx,vy,vw,vh]=vb.split(/[\s,]+/).map(parseFloat);
-            const cw=container.clientWidth, ch=container.clientHeight;
-            const scale=Math.min(cw/vw, ch/vh)*0.96;
-            this._zoom=scale;
-            this._panX=(cw-vw*scale)/2 - vx*scale;
-            this._panY=(ch-vh*scale)/2 - vy*scale;
-        } else {
-            this._zoom=1; this._panX=0; this._panY=0;
-        }
+        const svg=document.querySelector('#map-content svg'); if(!svg)return;
+        this._zoom=1; this._panX=0; this._panY=0;
+        svg.setAttribute('preserveAspectRatio','xMidYMin meet');
         this._applyView();
     }
     _togglePan(){this._panOn=!this._panOn;document.querySelector('.map-container').style.cursor=this._panOn?'grab':'';const b=document.getElementById('vp-hand');if(b){b.style.background=this._panOn?'#1565C0':'transparent';b.style.color=this._panOn?'white':'';}}
@@ -1973,9 +1962,11 @@ export class BoothMapSystem {
         document.getElementById('category-filter').addEventListener('change', (e) => { this.categoryFilter = e.target.value; this.applyFilters(); });
         document.getElementById('status-filter').addEventListener('change', (e) => { this.statusFilter = e.target.value; this.applyFilters(); });
 
-        document.getElementById('booth-opacity').addEventListener('input', (e) => {
+        const opacityEl = document.getElementById('booth-opacity');
+        if(opacityEl) opacityEl.addEventListener('input', (e) => {
             this.boothOpacity = parseFloat(e.target.value);
-            document.getElementById('opacity-val').textContent = Math.round(this.boothOpacity * 100) + '%';
+            const valEl = document.getElementById('opacity-val');
+            if(valEl) valEl.textContent = Math.round(this.boothOpacity * 100) + '%';
             this.applyColors();
         });
         document.getElementById('btn-export').addEventListener('click', () => this.exportData());
