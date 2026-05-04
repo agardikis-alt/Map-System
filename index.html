@@ -676,11 +676,12 @@ body {
 }
 
 /* ===== MAP FIT OVERRIDES ===== */
+/* ===== MAP FIT OVERRIDES ===== */
 .map-section {
     height: calc(100vh - 100px) !important;
     min-height: 0 !important;
     overflow: hidden !important;
-    isolation: isolate !important;
+    position: relative !important;
 }
 .map-container {
     flex: 1 1 0 !important;
@@ -688,18 +689,12 @@ body {
     position: relative !important;
     overflow: hidden !important;
 }
-#map-wrapper {
-    position: absolute !important;
-    inset: 0 !important;
-    overflow: hidden !important;
-}
 #map-content {
     position: absolute !important;
     inset: 0 !important;
     overflow: hidden !important;
 }
-/* SVG always fills container; transform-origin 0 0 for zoom math */
-/* SVG always fills container; transform-origin 0 0 for zoom math */
+/* SVG size set by JS; transform-origin 0 0 for zoom math */
 #map-content svg {
     display: block !important;
     position: absolute !important;
