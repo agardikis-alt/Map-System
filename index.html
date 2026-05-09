@@ -917,7 +917,7 @@ const _EMBEDDED_EVENT_DATA = {"offstreet":{"eventId":"offstreet","eventName":"OF
 // ===== Vendor Booth Map System v5 =====
 // Fixes: feature shapes drag/resize, text scaling, booth vs feature separation, 
 // bluegrass image, map reset safeguard, template copy, feature labeling
-
+const SYNC_URL = 'https://script.google.com/macros/s/AKfycbxK7FVM8KrBejdBn0qy_mY4mLl7S_MWON3Vz5yrEadrs878cvpa-0uZAcAzrlFR54Q7/exec';
 class BoothMapSystem {
     constructor() {
         this.currentEvent = 'offstreet';
@@ -959,6 +959,7 @@ class BoothMapSystem {
         this._loadGh();
         try { await this.loadData(); } catch(e) { console.error('loadData:', e); }
         try { this.loadCustomEvents(); } catch(e) { console.error('loadCustomEvents:', e); }
+        await this._autoLoad();
         try { this.setupListeners(); } catch(e) { console.error('setupListeners:', e); }
         try { this.setupViewport(); } catch(e) { console.error('setupViewport:', e); }
         this.renderCategoryFilter();
@@ -996,9 +997,8 @@ class BoothMapSystem {
         }
     }
 
-    saveEvent(id) { this._lsSet(`boothmap_${id}`, this.eventsData[id]); this.notify('Saved'); if(this.github.autoSync&&this.github.token) this._ghSave(); }
-    saveSvg(id, svgStr) { try { localStorage.setItem(`boothmap_svg_${id}`, svgStr); }catch(e){} }
-
+   saveEvent(id) { this._lsSet(`boothmap_${id}`, this.eventsData[id]); this.notify('Saved'); this._autoSave(); }
+    saveSvg(id, svgStr) { try { localStorage.setItem(`boothmap_svg_${id}`, svgStr); }catch(e){} this._autoSave(); }
     // ===== EVENT & MAP =====
     loadEvent(id) {
         this.currentEvent = id;
@@ -2806,85 +2806,110 @@ class BoothMapSystem {
     }
     _updateCustomUI() { const btn = document.getElementById('btn-delete-event'); if (btn) btn.style.display = this.currentEvent?.startsWith('custom_') ? 'inline-flex' : 'none'; }
 
-    // ===== GITHUB SYNC =====
-    _loadGh() { try { const s = localStorage.getItem('boothmap_github'); if (s) this.github = { ...this.github, ...JSON.parse(s) }; } catch (e) { } }
-    _saveGh() { localStorage.setItem('boothmap_github', JSON.stringify({ token: this.github.token, gistId: this.github.gistId, autoSync: this.github.autoSync })); }
-    renderGhUI() {
-        const c = document.getElementById('github-sync-container'); if (!c) return;
-        const connected = this.github.token && this.github.gistId;
-        c.innerHTML = `
-            <div class="github-sync">
-                <div class="sync-status ${connected ? 'connected' : ''}" id="gh-status">${connected ? `✓ Synced${this.github.lastSync ? ` (${new Date(this.github.lastSync).toLocaleDateString()})` : ''}` : 'Not connected'}</div>
-                <div class="button-group">
-                    <button id="btn-gh-set" class="btn btn-sm btn-secondary">⚙️ Token</button>
-                    ${connected ? `<button id="btn-gh-sv" class="btn btn-sm btn-success">☁️ Save</button><button id="btn-gh-ld" class="btn btn-sm btn-primary">↓ Load</button>` : ''}
-                </div>
-            </div>
-        `;
-        c.querySelector('#btn-gh-set')?.addEventListener('click', () => this._showGhDlg());
-        c.querySelector('#btn-gh-sv')?.addEventListener('click', () => this._ghSave());
-        c.querySelector('#btn-gh-ld')?.addEventListener('click', () => this._ghLoad());
+    // ===== AUTO-SYNC (replaces old GitHub Gist sync) =====
+    _loadGh() {
+      try { const s = localStorage.getItem('boothmap_github'); if (s) this.github = { ...this.github, ...JSON.parse(s) }; } catch (e) {}
     }
-    _showGhDlg() {
-        let m = document.getElementById('gh-dlg');
-        if (!m) {
-            m = document.createElement('div'); m.id = 'gh-dlg'; m.className = 'modal';
-            m.innerHTML = `<div class="modal-content" style="max-width:460px;"><div class="modal-header"><h3>GitHub Sync</h3><button class="btn-close" onclick="document.getElementById('gh-dlg').classList.remove('active')">&times;</button></div><div class="modal-body"><div class="form-group"><label>Personal Access Token</label><input type="password" id="gh-tok" placeholder="ghp_xxxxxxxxxxxx"><div class="hint">github.com → Settings → Developer settings → Tokens (classic) → Enable "gist" scope</div></div><div class="form-group"><label>Gist ID (optional)</label><input type="text" id="gh-gid" placeholder="Leave blank to auto-create"><div class="hint">Paste existing Gist ID or leave blank</div></div><div class="form-group"><label><input type="checkbox" id="gh-auto" style="margin-right:6px;"> Auto-sync on save</label></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="document.getElementById('gh-dlg').classList.remove('active')">Cancel</button><button id="gh-ok" class="btn btn-primary">Save</button></div></div>`;
-            document.body.appendChild(m);
-        }
-        document.getElementById('gh-tok').value = this.github.token || '';
-        document.getElementById('gh-gid').value = this.github.gistId || '';
-        document.getElementById('gh-auto').checked = this.github.autoSync || false;
-        m.classList.add('active');
-        const btn = document.getElementById('gh-ok');
-        const nb = btn.cloneNode(true); btn.parentNode.replaceChild(nb, btn);
-        nb.addEventListener('click', () => {
-            this.github.token = document.getElementById('gh-tok').value.trim();
-            this.github.gistId = document.getElementById('gh-gid').value.trim();
-            this.github.autoSync = document.getElementById('gh-auto').checked;
-            this._saveGh(); this.renderGhUI(); m.classList.remove('active');
-            this.notify(this.github.token ? 'GitHub connected' : 'GitHub disabled');
-        });
-    }
-    async _ghSave() {
-        if (!this.github.token) { this.notify('Set GitHub token first'); return; }
-        this.notify('Saving to cloud...');
-        const payload = { eventsData: this.eventsData, eventsConfig: this.eventsConfig, categories: this.categories, customEvents: this._getCustom(), svgs: {} };
-        Object.keys(this.eventsConfig).forEach(k => { const s = localStorage.getItem(`boothmap_svg_${k}`); if (s) payload.svgs[k] = s; });
-        const body = { description: 'Vendor Booth Map System', public: false, files: { 'boothmap-data.json': { content: JSON.stringify(payload) } } };
-        try {
-            let url = 'https://api.github.com/gists'; let method = 'POST';
-            if (this.github.gistId) { url = `https://api.github.com/gists/${this.github.gistId}`; method = 'PATCH'; }
-            const res = await fetch(url, { method, headers: { 'Authorization': `token ${this.github.token}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            if (!res.ok) { const err = await res.json(); throw new Error(err.message || `HTTP ${res.status}`); }
-            const r = await res.json(); this.github.gistId = r.id; this.github.lastSync = new Date().toISOString();
-            this._saveGh(); this.renderGhUI();
-            this.notify(`✓ Saved! Gist: ${r.id}`, 'success');
-            try { await navigator.clipboard.writeText(r.id); this.notify('ID copied!', 'success'); } catch (e) { }
-        } catch (err) { this.notify('Save failed: ' + err.message, 'error'); }
-    }
-    async _ghLoad() {
-        if (!this.github.token) { this.notify('Set token first'); return; }
-        if (!this.github.gistId) { this.notify('No Gist ID — save first or enter one'); return; }
-        this.notify('Loading from cloud...');
-        try {
-            const res = await fetch(`https://api.github.com/gists/${this.github.gistId}`, { headers: { 'Authorization': `token ${this.github.token}`, 'Accept': 'application/vnd.github.v3+json' } });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const gist = await res.json(); const f = gist.files['boothmap-data.json']; if (!f) throw new Error('No data file');
-            const payload = JSON.parse(f.content);
-            if (!payload.eventsData || !payload.eventsConfig) throw new Error('Invalid format');
-            this.eventsData = payload.eventsData; this.eventsConfig = payload.eventsConfig; this.categories = payload.categories || this.categories;
-            if (payload.customEvents) this._saveCustom(payload.customEvents);
-            if (payload.svgs) Object.entries(payload.svgs).forEach(([k, v]) => localStorage.setItem(`boothmap_svg_${k}`, v));
-            Object.keys(this.eventsData).forEach(k => this._lsSet(`boothmap_${k}`, this.eventsData[k]));
-            const s = document.getElementById('event-select'); s.innerHTML = '';
-            Object.entries(this.eventsConfig).forEach(([id, cfg]) => { const o = document.createElement('option'); o.value = id; o.textContent = cfg.name; if (id.startsWith('custom_')) o.dataset.custom = '1'; s.appendChild(o); });
-            this.github.lastSync = new Date().toISOString(); this._saveGh(); this.renderGhUI();
-            this.loadEvent(this.currentEvent); this.notify('✓ Loaded from cloud!', 'success');
-        } catch (err) { this.notify('Load failed: ' + err.message, 'error'); }
+    _saveGh() {
+      localStorage.setItem('boothmap_github', JSON.stringify({ lastSync: this.github.lastSync }));
     }
 
-    // ===== EVENT LISTENERS =====
+    async _autoLoad() {
+      if (!SYNC_URL || SYNC_URL.includes('PASTE_THE')) return;
+      try {
+        const res = await fetch(SYNC_URL);
+        if (!res.ok) return;
+        const text = await res.text();
+        if (!text || text === '{}') return;
+        const payload = JSON.parse(text);
+        if (!payload || !payload.eventsData || Object.keys(payload.eventsData).length === 0) return;
+        this.eventsData = payload.eventsData;
+        if (payload.eventsConfig) this.eventsConfig = payload.eventsConfig;
+        if (payload.categories) this.categories = payload.categories;
+        if (payload.customEvents) this._saveCustom(payload.customEvents);
+        if (payload.svgs) {
+          Object.entries(payload.svgs).forEach(([k, v]) => localStorage.setItem(`boothmap_svg_${k}`, v));
+        }
+        Object.keys(this.eventsData).forEach(k => this._lsSet(`boothmap_${k}`, this.eventsData[k]));
+        this.github.lastSync = new Date().toISOString();
+        this._saveGh();
+        console.log('☁️ Loaded from cloud');
+      } catch (e) {
+        console.error('Auto-load failed:', e);
+      }
+    }
+
+    _autoSave() {
+      if (!SYNC_URL || SYNC_URL.includes('PASTE_THE')) return;
+      clearTimeout(this._syncTimer);
+      this._syncTimer = setTimeout(() => this._doPush(), 1500);
+    }
+
+    async _doPush() {
+      if (!SYNC_URL || SYNC_URL.includes('PASTE_THE')) return false;
+      const payload = {
+        eventsData: this.eventsData,
+        eventsConfig: this.eventsConfig,
+        categories: this.categories,
+        customEvents: this._getCustom(),
+        svgs: {}
+      };
+      Object.keys(this.eventsConfig).forEach(k => {
+        const s = localStorage.getItem(`boothmap_svg_${k}`);
+        if (s) payload.svgs[k] = s;
+      });
+      try {
+        const res = await fetch(SYNC_URL, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          headers: { 'Content-Type': 'text/plain' },
+          redirect: 'follow'
+        });
+        if (res.ok) {
+          this.github.lastSync = new Date().toISOString();
+          this._saveGh();
+          this.renderGhUI();
+          return true;
+        }
+        return false;
+      } catch (e) {
+        console.error('Auto-save failed:', e);
+        return false;
+      }
+    }
+
+    renderGhUI() {
+      const c = document.getElementById('github-sync-container');
+      if (!c) return;
+      const configured = SYNC_URL && !SYNC_URL.includes('PASTE_THE');
+      const status = !configured
+        ? '⚠️ Not configured'
+        : (this.github.lastSync
+            ? `☁️ Synced ${new Date(this.github.lastSync).toLocaleTimeString()}`
+            : '☁️ Auto-sync ready');
+      c.innerHTML = `
+        <div class="github-sync">
+          <div class="sync-status ${configured ? 'connected' : ''}">${status}</div>
+          <div class="button-group">
+            <button id="btn-sync-down" class="btn btn-sm btn-primary">↓ Pull from cloud</button>
+            <button id="btn-sync-up" class="btn btn-sm btn-success">↑ Push now</button>
+          </div>
+        </div>
+      `;
+      c.querySelector('#btn-sync-down')?.addEventListener('click', async () => {
+        if (!confirm('Pull from cloud will OVERWRITE this device with the cloud copy. Continue?')) return;
+        this.notify('Pulling from cloud...');
+        await this._autoLoad();
+        this.loadEvent(this.currentEvent);
+        this.notify('Pulled from cloud', 'success');
+      });
+      c.querySelector('#btn-sync-up')?.addEventListener('click', async () => {
+        this.notify('Pushing to cloud...');
+        clearTimeout(this._syncTimer);
+        const ok = await this._doPush();
+        this.notify(ok ? 'Pushed to cloud' : 'Push failed — check console', ok ? 'success' : 'error');
+      });
+    }
     // Safe event listener helper — never throws if element missing
     _on(id, event, handler) {
         const el = document.getElementById(id);
