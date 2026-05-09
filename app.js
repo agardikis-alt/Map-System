@@ -749,13 +749,66 @@ export class BoothMapSystem {
 
     applyFilters(){
         const d=this.eventsData[this.currentEvent]; if(!d?.booths)return;
+        const hasSearch = !!this.searchTerm;
         Object.entries(d.booths).forEach(([bid,b])=>{
             let el=document.getElementById(`booth-${bid}`)||document.getElementById(bid)||document.querySelector(`[id*="${bid}"].booth`);
-            if(!el)return; let v=true;
-            if(this.searchTerm){const f=[b.boothId,b.mapLabel,b.vendorName,b.businessName,b.vendorCategory].join(' ').toLowerCase();if(!f.includes(this.searchTerm))v=false;}
+            if(!el)return; let v=true; let isMatch=false;
+            if(this.searchTerm){
+                const f=[b.boothId,b.mapLabel,b.vendorName,b.businessName,b.vendorCategory].join(' ').toLowerCase();
+                if(f.includes(this.searchTerm)) isMatch=true; else v=false;
+            }
             if(this.categoryFilter!=='all'&&b.vendorCategory!==this.categoryFilter)v=false;
             if(this.statusFilter!=='all'&&b.boothStatus!==this.statusFilter)v=false;
-            el.style.opacity=v?'1':'0.15';el.classList.toggle('filtered-out',!v);
+            el.style.opacity=v?'1':'0.15';
+            el.classList.toggle('filtered-out',!v);
+            // Highlight booth if it matches the search term
+            el.classList.toggle('search-match', hasSearch && isMatch);
+        });
+    }
+
+    // ===== ARROW-KEY NUDGE (Edit Positions mode) =====
+    _setupArrowNudge(){
+        if(this._arrowNudgeBound) return;
+        this._arrowNudgeBound = true;
+        document.addEventListener('keydown', (e) => {
+            // Only active when position editor is on AND a booth/shape is selected
+            if(!this.positionMode || !this._selectedEl) return;
+            // Don't fire if user is typing in an input/textarea
+            const tag = (document.activeElement?.tagName || '').toLowerCase();
+            if(tag === 'input' || tag === 'textarea' || tag === 'select') return;
+            const keys = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
+            if(!keys.includes(e.key)) return;
+            e.preventDefault();
+            const step = e.shiftKey ? 10 : 1;
+            const el = this._selectedEl;
+            let dx = 0, dy = 0;
+            if(e.key === 'ArrowUp')    dy = -step;
+            if(e.key === 'ArrowDown')  dy =  step;
+            if(e.key === 'ArrowLeft')  dx = -step;
+            if(e.key === 'ArrowRight') dx =  step;
+            // Move based on element type
+            const tagName = el.tagName.toLowerCase();
+            if(tagName === 'rect'){
+                el.setAttribute('x', parseFloat(el.getAttribute('x')||0) + dx);
+                el.setAttribute('y', parseFloat(el.getAttribute('y')||0) + dy);
+            } else if(tagName === 'circle' || tagName === 'ellipse'){
+                el.setAttribute('cx', parseFloat(el.getAttribute('cx')||0) + dx);
+                el.setAttribute('cy', parseFloat(el.getAttribute('cy')||0) + dy);
+            } else if(tagName === 'text'){
+                el.setAttribute('x', parseFloat(el.getAttribute('x')||0) + dx);
+                el.setAttribute('y', parseFloat(el.getAttribute('y')||0) + dy);
+            } else {
+                // Fallback for polygons, paths, lines: use transform
+                const cur = el.getAttribute('transform') || '';
+                const m = cur.match(/translate\(([-\d.]+)[ ,]+([-\d.]+)\)/);
+                const tx = (m ? parseFloat(m[1]) : 0) + dx;
+                const ty = (m ? parseFloat(m[2]) : 0) + dy;
+                const rest = cur.replace(/translate\([^)]*\)/, '').trim();
+                el.setAttribute('transform', `translate(${tx} ${ty}) ${rest}`.trim());
+            }
+            // Refresh resize/rotate handles to follow the booth
+            if(typeof this._refreshHandles === 'function') this._refreshHandles(el);
+            this._persistSvg && this._persistSvg();
         });
     }
 
@@ -928,6 +981,7 @@ export class BoothMapSystem {
     // ===== POSITION EDITOR =====
     togglePositionMode(){
         this.positionMode=!this.positionMode;
+        this._setupArrowNudge();
         const btn=document.getElementById('btn-position-mode');
         const container=document.querySelector('.map-container');
         if(this.positionMode){
