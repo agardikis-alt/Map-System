@@ -106,7 +106,14 @@ export class BoothMapSystem {
         const stripText = (svg) => svg.replace(/<text\b[^>]*>.*?<\/text>/gis, '');
 
         // Special case: bluegrass uses PNG image - generate SVG wrapper
+        // unless the user has already drawn/persisted booth shapes.
         if (this.currentEvent === 'bluegrass') {
+            const savedBg = this._svgGet('bluegrass');
+            if (savedBg) {
+                mc.innerHTML = stripText(savedBg);
+                this._post();
+                return;
+            }
             mc.innerHTML = '<svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><image href="maps/bluegrass-2026.png" x="0" y="0" width="1280" height="720" preserveAspectRatio="xMidYMid meet"/></svg>';
             this.setupBoothInteractions(); this._applyView();
             setTimeout(() => this.fitView(), 50); return;
@@ -1715,9 +1722,10 @@ export class BoothMapSystem {
         const label = document.getElementById('new-booth-label').value.trim() || id;
         if (!id) { this.notify('Booth ID required'); return; }
         const data = this.eventsData[this.currentEvent];
-        if (data?.booths?.[id]) { this.notify(`⚠️ "${id}" already exists!`); return; }
         const { x, y, w, h, double } = this._pending;
         const svg = document.querySelector('#map-content svg'); if (!svg) return;
+        const existingEl = document.getElementById(`booth-${id}`) || document.getElementById(id);
+        if (existingEl && existingEl.closest('#map-content svg')) { this.notify(`⚠️ "${id}" already exists on the map!`); return; }
         const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         rect.id = `booth-${id}`; rect.setAttribute('x', x); rect.setAttribute('y', y);
         rect.setAttribute('width', w); rect.setAttribute('height', h);
@@ -1725,7 +1733,14 @@ export class BoothMapSystem {
         rect.style.fill = 'rgba(21,101,192,0.05)'; rect.style.stroke = 'rgba(21,101,192,0.6)';
         rect.style.strokeWidth = '1.5'; svg.appendChild(rect);
         if (data) {
-            data.booths[id] = { boothId: id, vendorName: '', businessName: '', vendorCategory: 'Open', boothStatus: 'open', boothSize: double ? '10x20' : '10x10', notes: '', phone: '', email: '', missingItems: [], mapLabel: label };
+            data.booths = data.booths || {};
+            if (data.booths[id]) {
+                data.booths[id].boothId = id;
+                data.booths[id].mapLabel = label;
+                data.booths[id].boothSize = data.booths[id].boothSize || (double ? '10x20' : '10x10');
+            } else {
+                data.booths[id] = { boothId: id, vendorName: '', businessName: '', vendorCategory: 'Open', boothStatus: 'open', boothSize: double ? '10x20' : '10x10', notes: '', phone: '', email: '', missingItems: [], mapLabel: label };
+            }
             this.saveEvent(this.currentEvent); this.updateStats();
         }
         rect.addEventListener('click', () => { if (!this.positionMode) this.selectBooth(id); });
