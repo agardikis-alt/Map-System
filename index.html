@@ -1145,12 +1145,19 @@ class BoothMapSystem {
         // Extract booth elements with their geometry
         const booths = [];
         svg.querySelectorAll('.booth').forEach(el => {
-            const data = this.eventsData[this.currentEvent]?.booths?.[el.id];
+            const cleanId = el.id.replace(/^booth-/i, '');
+            const data = this.eventsData[this.currentEvent]?.booths?.[cleanId];
             if (filter === 'assigned' && data?.boothStatus !== 'assigned') return;
             if (filter === 'open' && data?.boothStatus !== 'open') return;
-            const r = this._getRect(el);
+            // Read geometry from SVG attributes directly — most reliable across browsers
+            const x = parseFloat(el.getAttribute('x')) || 0;
+            const y = parseFloat(el.getAttribute('y')) || 0;
+            const width = parseFloat(el.getAttribute('width')) || 50;
+            const height = parseFloat(el.getAttribute('height')) || 50;
+            const rx = parseFloat(el.getAttribute('rx')) || 0;
+            const ry = parseFloat(el.getAttribute('ry')) || 0;
             const rot = this._parseRot(el);
-            booths.push({ id: el.id, x: r.x, y: r.y, width: r.width, height: r.height, rx: el.rx?.baseVal?.value||0, ry: el.ry?.baseVal?.value||0, rotation: rot.a || 0 });
+            booths.push({ id: cleanId, x, y, width, height, rx, ry, rotation: rot.a || 0 });
         });
 
         // Extract features (shapes)
