@@ -802,6 +802,8 @@ body {
                     <button id="btn-reset" class="btn btn-danger btn-sm">Reset Map</button>
                     <button id="btn-copy-template" class="btn btn-secondary btn-sm">Copy Layout</button>
                     <button id="btn-paste-template" class="btn btn-secondary btn-sm">Paste Layout</button>
+                    <button id="btn-delete-pasted" class="btn btn-secondary btn-sm">Delete Pasted Layout</button>
+                    <button id="btn-replace-map" class="btn btn-secondary btn-sm">Replace Map (Keep Booths)</button>
                     <button id="btn-upload-map" class="btn btn-secondary btn-sm">Upload Map</button>
                     <button id="btn-delete-event" class="btn btn-danger btn-sm" style="display:none;">Delete Event</button>
                     <button id="btn-diagnostics" class="btn btn-secondary btn-sm">Diagnostics</button>
@@ -993,7 +995,7 @@ class BoothMapSystem {
 
     // ===== DATA =====
     async loadData() {
-        // Embedded data — no fetch needed, works on any static host
+        // Embedded data — always wins over cloud-loaded categories
         this.categories = JSON.parse(JSON.stringify(_EMBEDDED_CATEGORIES));
         this.eventsConfig = JSON.parse(JSON.stringify(_EMBEDDED_EVENTS));
         for (const [k] of Object.entries(this.eventsConfig)) {
@@ -1203,7 +1205,7 @@ class BoothMapSystem {
         this._pasteTemplate(tpl);
     }
 
-    _pasteTemplate(tpl) {
+   _pasteTemplate(tpl) {
         const svg = document.querySelector('#map-content svg'); if (!svg) { this.notify('No map loaded'); return; }
         const ns = 'http://www.w3.org/2000/svg';
 
@@ -1212,22 +1214,46 @@ class BoothMapSystem {
         g.id = '__template_group__';
         g.style.cursor = 'move';
 
-        // Add booths
+        // Track which booth IDs we're adding so we can show/delete them later.
+        // Prefix every pasted ID so it doesn't collide with existing booth data.
+        const pastePrefix = '__pasted_';
+        const pastedBoothIds = [];
+
+        // Add booths — HIGH CONTRAST so they're visible on photos/dark backgrounds
         const data = this.eventsData[this.currentEvent];
         tpl.booths.forEach(b => {
+            const newId = pastePrefix + b.id;
             const rect = document.createElementNS(ns, 'rect');
-            rect.id = b.id; rect.setAttribute('x', b.x); rect.setAttribute('y', b.y);
+            rect.id = newId;
+            rect.dataset.originalId = b.id;
+            rect.setAttribute('x', b.x); rect.setAttribute('y', b.y);
             rect.setAttribute('width', b.width); rect.setAttribute('height', b.height);
             if (b.rx) rect.setAttribute('rx', b.rx); if (b.ry) rect.setAttribute('ry', b.ry);
-            rect.setAttribute('fill', 'rgba(21,101,192,0.05)'); rect.setAttribute('stroke', 'rgba(21,101,192,0.6)');
-            rect.setAttribute('stroke-width', '1.5'); rect.setAttribute('stroke-dasharray', '4,2');
+            // VISIBLE styling: orange dashed outline, semi-transparent orange fill
+            rect.setAttribute('fill', 'rgba(255, 140, 0, 0.30)');
+            rect.setAttribute('stroke', '#FF6600');
+            rect.setAttribute('stroke-width', '2.5');
+            rect.setAttribute('stroke-dasharray', '6,3');
             rect.classList.add('booth');
             if (b.rotation) rect.setAttribute('transform', `rotate(${b.rotation},${b.x+b.width/2},${b.y+b.height/2})`);
             g.appendChild(rect);
-            // Add empty booth data
-            if (!data.booths[b.id]) {
-                data.booths[b.id] = { vendorName:'',businessName:'',vendorCategory:'Open',boothStatus:'open',phone:'',email:'',notes:'',missingItems:[] };
-            }
+
+            // Add a visible label inside each pasted booth showing the booth ID
+            const label = document.createElementNS(ns, 'text');
+            label.setAttribute('x', b.x + b.width / 2);
+            label.setAttribute('y', b.y + b.height / 2 + 4);
+            label.setAttribute('text-anchor', 'middle');
+            label.setAttribute('font-size', Math.min(14, b.width / 3));
+            label.setAttribute('font-family', 'Arial, sans-serif');
+            label.setAttribute('font-weight', '700');
+            label.setAttribute('fill', '#5C3300');
+            label.setAttribute('pointer-events', 'none');
+            label.classList.add('paste-label');
+            label.dataset.forBooth = newId;
+            label.textContent = b.id;
+            g.appendChild(label);
+
+            pastedBoothIds.push({ newId, originalId: b.id });
         });
 
         // Add features
@@ -1238,7 +1264,7 @@ class BoothMapSystem {
             else if (f.tag === 'line') { el = document.createElementNS(ns, 'line'); el.setAttribute('x1',f.attrs.x1);el.setAttribute('y1',f.attrs.y1);el.setAttribute('x2',f.attrs.x2);el.setAttribute('y2',f.attrs.y2); }
             else if (f.tag === 'polygon') { el = document.createElementNS(ns, 'polygon'); el.setAttribute('points',f.attrs.points); }
             else { el = document.createElementNS(ns, 'rect'); el.setAttribute('x',f.attrs.x);el.setAttribute('y',f.attrs.y);el.setAttribute('width',f.attrs.width);el.setAttribute('height',f.attrs.height); }
-            el.id = f.id || ('feat_' + Math.random().toString(36).slice(2,8));
+            el.id = pastePrefix + (f.id || ('feat_' + Math.random().toString(36).slice(2,8)));
             el.setAttribute('fill', f.attrs.fill); el.setAttribute('fill-opacity', f.attrs.fillOpacity);
             el.setAttribute('stroke', f.attrs.stroke); el.setAttribute('stroke-width', f.attrs.strokeWidth);
             if (f.attrs.markerEnd) el.setAttribute('marker-end', f.attrs.markerEnd);
@@ -1255,7 +1281,7 @@ class BoothMapSystem {
         // Add text elements
         tpl.texts.forEach(t => {
             const te = document.createElementNS(ns, 'text');
-            te.id = t.id || ('txt_' + Math.random().toString(36).slice(2,8));
+            te.id = pastePrefix + (t.id || ('txt_' + Math.random().toString(36).slice(2,8)));
             te.setAttribute('x', t.x); te.setAttribute('y', t.y);
             te.setAttribute('font-size', t.fontSize || '14');
             te.setAttribute('font-family', 'Arial, sans-serif');
@@ -1265,8 +1291,16 @@ class BoothMapSystem {
             g.appendChild(te);
         });
 
+        // Stash the mapping so the finalize step can rename pasted IDs and create booth data
+        this._pastedBoothIds = pastedBoothIds;
+
         svg.appendChild(g);
-        this._persistSvg(); this.saveEvent(this.currentEvent); this.updateStats();
+        this._persistSvg();
+        this.updateStats();
+
+        // Confirm visually that something landed, so users know to drag/click to place
+        const total = tpl.booths.length + tpl.features.length + tpl.texts.length;
+        this.notify(`Layout placed in orange — drag to position, scroll to scale, click to commit (${total} items)`);
 
         // Start alignment mode
         this._startTemplateAlignMode(g);
@@ -1351,7 +1385,7 @@ class BoothMapSystem {
         this._templateGroup.setAttribute('transform', `translate(${this._tplX.toFixed(2)},${this._tplY.toFixed(2)}) scale(${this._tplScale.toFixed(4)})`);
     }
 
-    _finishTemplateAlign() {
+_finishTemplateAlign() {
         const group = this._templateGroup; if (!group) return;
         const children = Array.from(group.children);
         const svg = group.parentNode; if (!svg) return;
@@ -1359,8 +1393,6 @@ class BoothMapSystem {
 
         children.forEach(el => {
             const tag = el.tagName.toLowerCase();
-            // Bake group transform into each element's geometry:
-            // newCoord = oldCoord * scale + translate
             if (tag === 'rect') {
                 const x = parseFloat(el.getAttribute('x')) || 0;
                 const y = parseFloat(el.getAttribute('y')) || 0;
@@ -1370,7 +1402,6 @@ class BoothMapSystem {
                 el.setAttribute('y', y * s + ty);
                 el.setAttribute('width', w * s);
                 el.setAttribute('height', h * s);
-                // Update rotation center
                 const rot = this._parseRot(el);
                 if (rot.a !== null) {
                     const cx = (x * s + tx) + (w * s) / 2;
@@ -1413,10 +1444,79 @@ class BoothMapSystem {
             svg.appendChild(el);
         });
         group.remove();
+
+        // Now strip the __pasted_ prefix from booth IDs and create/merge booth data.
+        // If a booth ID already exists in current event data, the pasted one gets a -copy suffix.
+        const data = this.eventsData[this.currentEvent];
+        const finalPastedIds = [];
+        if (this._pastedBoothIds && data) {
+            this._pastedBoothIds.forEach(({ newId, originalId }) => {
+                const el = svg.querySelector(`[id="${newId}"]`);
+                const labelEl = svg.querySelector(`.paste-label[data-for-booth="${newId}"]`);
+                if (!el) return;
+                let finalId = originalId;
+                // If a booth with this ID already has DATA in this event AND has a vendor assigned, suffix
+                const existing = data.booths?.[originalId];
+                if (existing && existing.boothStatus === 'assigned') {
+                    let n = 2;
+                    while (data.booths[`${originalId}-${n}`]) n++;
+                    finalId = `${originalId}-${n}`;
+                }
+                el.id = finalId;
+                el.removeAttribute('data-original-id');
+                // Reset the orange paste styling — applyColors() will repaint based on category
+                el.removeAttribute('stroke-dasharray');
+                if (!data.booths[finalId]) {
+                    data.booths[finalId] = {
+                        boothId: finalId, vendorName: '', businessName: '',
+                        vendorCategory: 'Open', boothStatus: 'open', boothSize: '10x10',
+                        notes: '', phone: '', email: '', missingItems: [], mapLabel: finalId
+                    };
+                }
+                if (labelEl) labelEl.remove();
+                finalPastedIds.push(finalId);
+            });
+        }
+        // Also strip __pasted_ prefix from any feature/text elements
+        svg.querySelectorAll('[id^="__pasted_"]').forEach(el => {
+            el.id = el.id.replace(/^__pasted_/, '');
+        });
+        this._pastedBoothIds = null;
+
+        // Save the list of pasted booth IDs for "Delete Pasted Layout"
+        this._lastPastedIds = finalPastedIds;
+        try { localStorage.setItem(`boothmap_lastpaste_${this.currentEvent}`, JSON.stringify(finalPastedIds)); } catch(e) {}
+
         this._cleanupTemplateAlign();
+        this._persistSvg();
+        this.saveEvent(this.currentEvent);
+        this.applyColors();
+        this.setupBoothInteractions();
+        this.notify(`Layout placed — ${finalPastedIds.length} booth${finalPastedIds.length === 1 ? '' : 's'} added. Use Delete Pasted Layout if needed.`);
+    }
+
+    // ===== DELETE PASTED LAYOUT =====
+    _deletePastedLayout() {
+        let ids = this._lastPastedIds;
+        if (!ids || !ids.length) {
+            try { ids = JSON.parse(localStorage.getItem(`boothmap_lastpaste_${this.currentEvent}`) || '[]'); } catch(e) { ids = []; }
+        }
+        if (!ids.length) { this.notify('No recently pasted layout found'); return; }
+        if (!confirm(`Delete the ${ids.length} booths from the last paste? Vendor data inside them will also be removed.`)) return;
+        const svg = document.querySelector('#map-content svg');
+        const data = this.eventsData[this.currentEvent];
+        let removed = 0;
+        ids.forEach(id => {
+            const el = svg?.querySelector(`[id="${id}"]`);
+            if (el) { el.remove(); removed++; }
+            svg?.querySelectorAll(`.resize-handle[data-id="${id}"], .rotate-handle[data-id="${id}"]`).forEach(h => h.remove());
+            if (data?.booths?.[id]) delete data.booths[id];
+        });
+        this._lastPastedIds = null;
+        try { localStorage.removeItem(`boothmap_lastpaste_${this.currentEvent}`); } catch(e) {}
         this._persistSvg(); this.saveEvent(this.currentEvent);
-        this.applyColors(); this.setupBoothInteractions();
-        this.notify('Template placed! Booths are now individually editable');
+        this.updateStats(); this.applyColors();
+        this.notify(`Removed ${removed} pasted booth${removed === 1 ? '' : 's'}`);
     }
 
     _cancelTemplateAlign() {
@@ -2753,7 +2853,54 @@ class BoothMapSystem {
         if (!s || s.querySelector(`option[value="${CSS.escape(id)}"]`)) return;
         const o = document.createElement('option'); o.value = id; o.textContent = name; o.dataset.custom = '1'; s.appendChild(o);
     }
+// ===== REPLACE MAP (KEEPS BOOTHS & ASSIGNMENTS) =====
+    _showReplaceMapDlg() {
+        // Reuse the upload modal but flag it as "replace mode"
+        this._replaceMapMode = true;
+        const m = document.getElementById('upload-map-modal');
+        if (!m) return;
+        // Lock the event name to current event (can't change which event we're replacing into)
+        document.getElementById('upload-event-name').value = this.eventsConfig[this.currentEvent]?.name || this.currentEvent;
+        document.getElementById('upload-event-name').readOnly = true;
+        document.getElementById('upload-map-file').value = '';
+        document.getElementById('upload-map-width').value = '';
+        document.getElementById('upload-map-height').value = '';
+        document.getElementById('upload-preview').classList.add('hidden');
+        document.getElementById('upload-preview').innerHTML = '';
+        // Change modal title and button to show this is a replace
+        const header = m.querySelector('.modal-header h3');
+        if (header) header.textContent = 'Replace Map (Keep Booths & Vendors)';
+        const confirmBtn = document.getElementById('confirm-upload-map');
+        if (confirmBtn) confirmBtn.textContent = 'Replace Map';
+        m.classList.add('active');
+        // Reuse drop zone setup
+        const zone = document.getElementById('upload-drop-zone');
+        const fileInput = document.getElementById('upload-map-file');
+        zone.onclick = () => fileInput.click();
+        fileInput.onchange = () => { if (fileInput.files?.length) this._handleUploadFile(fileInput.files[0]); };
+        zone.ondragover = (e) => { e.preventDefault(); zone.classList.add('drag-over'); };
+        zone.ondragleave = () => zone.classList.remove('drag-over');
+        zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove('drag-over'); const f = e.dataTransfer.files[0]; if (f) { this._handleUploadFile(f); fileInput.files = e.dataTransfer.files; } };
+    }
 
+    _doReplaceMap(svgContent) {
+        // Snapshot current booth data BEFORE replacing the SVG
+        const data = this.eventsData[this.currentEvent];
+        const boothBackup = data?.booths ? JSON.parse(JSON.stringify(data.booths)) : {};
+        // Save the new SVG into localStorage for this event
+        this.saveSvg(this.currentEvent, svgContent);
+        // Reload the event — this will use the new SVG but keep booth data intact
+        this.loadEvent(this.currentEvent);
+        // Restore booth data (in case loadEvent overwrote it — defensive)
+        if (data) {
+            data.booths = boothBackup;
+            this.saveEvent(this.currentEvent);
+            this.applyColors();
+            this.updateStats();
+        }
+        const count = Object.keys(boothBackup).length;
+        this.notify(`Map replaced — ${count} booth${count === 1 ? '' : 's'} preserved`);
+    }
     _showUploadDlg() {
         const m = document.getElementById('upload-map-modal');
         if (!m) return;
@@ -2798,6 +2945,52 @@ class BoothMapSystem {
         const file = this._uploadFileData;
         if (!name) { this.notify('Event name required'); return; }
         if (!file) { this.notify('Select a map image'); return; }
+// REPLACE MODE: keep existing event's booth data, just swap the SVG
+        if (this._replaceMapMode) {
+            const isSvgRep = file.type === 'image/svg+xml' || file.name.endsWith('.svg');
+            const closeReplace = () => {
+                this._replaceMapMode = false;
+                document.getElementById('upload-event-name').readOnly = false;
+                const header = document.querySelector('#upload-map-modal .modal-header h3');
+                if (header) header.textContent = 'Upload New Map';
+                const cb = document.getElementById('confirm-upload-map');
+                if (cb) cb.textContent = 'Create Event';
+                document.getElementById('upload-map-modal').classList.remove('active');
+                this._uploadFileData = null;
+            };
+            if (isSvgRep) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    if (!e.target.result.includes('<svg') && !e.target.result.includes('<SVG')) { this.notify('Invalid SVG file'); return; }
+                    this._doReplaceMap(e.target.result);
+                    closeReplace();
+                };
+                reader.readAsText(file);
+            } else {
+                const img = new Image();
+                const url = URL.createObjectURL(file);
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    const userW = parseInt(document.getElementById('upload-map-width').value);
+                    const userH = parseInt(document.getElementById('upload-map-height').value);
+                    const w = userW || img.naturalWidth || 1280;
+                    const h = userH || img.naturalHeight || 720;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const svgWrapper = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet">
+  <image href="${e.target.result}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>
+</svg>`;
+                        this._doReplaceMap(svgWrapper);
+                        closeReplace();
+                    };
+                    reader.readAsDataURL(file);
+                };
+                img.onerror = () => { URL.revokeObjectURL(url); this.notify('Failed to load image'); };
+                img.src = url;
+            }
+            return;
+        }
 
         const eventId = 'custom_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').slice(0, 20) + '_' + Date.now().toString(36).slice(-4);
         const isSvg = file.type === 'image/svg+xml' || file.name.endsWith('.svg');
@@ -2884,7 +3077,6 @@ class BoothMapSystem {
         if (!payload || !payload.eventsData || Object.keys(payload.eventsData).length === 0) return;
         this.eventsData = payload.eventsData;
         if (payload.eventsConfig) this.eventsConfig = payload.eventsConfig;
-        if (payload.categories) this.categories = payload.categories;
         if (payload.customEvents) this._saveCustom(payload.customEvents);
         if (payload.svgs) {
           Object.entries(payload.svgs).forEach(([k, v]) => localStorage.setItem(`boothmap_svg_${k}`, v));
@@ -2998,6 +3190,8 @@ class BoothMapSystem {
         this._on('btn-diagnostics', 'click', () => this.toggleDiagnostics());
         this._on('btn-upload-map', 'click', () => this._showUploadDlg());
         this._on('btn-paste-template', 'click', () => this._showPasteTemplateDlg());
+        this._on('btn-delete-pasted', 'click', () => this._deletePastedLayout());
+        this._on('btn-replace-map', 'click', () => this._showReplaceMapDlg());
         this._on('btn-delete-event', 'click', () => this._deleteCustom(this.currentEvent));
         this._on('btn-fit-map', 'click', () => this.fitView());
         this._on('btn-position-mode', 'click', () => this.togglePositionMode());
