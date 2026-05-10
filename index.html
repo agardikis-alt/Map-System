@@ -1029,8 +1029,15 @@ class BoothMapSystem {
         const mc = document.getElementById('map-content');
         const stripText = (svg) => svg.replace(/<text\b[^>]*>.*?<\/text>/gis, '');
 
-        // Special case: bluegrass uses PNG image - generate SVG wrapper
+        // Special case: bluegrass uses PNG image - generate SVG wrapper IF no saved SVG yet.
+        // (If user has pasted booths, the saved SVG already includes the photo — use it.)
         if (this.currentEvent === 'bluegrass') {
+            const savedBg = this._svgGet('bluegrass');
+            if (savedBg) {
+                mc.innerHTML = stripText(savedBg);
+                this._post();
+                return;
+            }
             mc.innerHTML = '<svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><image href="maps/bluegrass-2026.png" x="0" y="0" width="1280" height="720" preserveAspectRatio="xMidYMid meet"/></svg>';
             this.setupBoothInteractions(); this._applyView();
             setTimeout(() => this.fitView(), 50); return;
