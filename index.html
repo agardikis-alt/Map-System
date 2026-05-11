@@ -1767,7 +1767,7 @@ _finishTemplateAlign() {
                 t.setAttribute('font-size', '10'); t.setAttribute('font-family', 'Arial, sans-serif');
                 t.setAttribute('fill', '#555'); t.setAttribute('text-anchor', 'middle');
                 t.setAttribute('pointer-events', 'none');
-                t.setAttribute('class', 'feature-label-text');
+                t.setAttribute('class', 'feature-text quadrant-num');
                 t.setAttribute('data-for', id);
                 t.textContent = newLabel;
                 svg.appendChild(t);
@@ -3484,23 +3484,22 @@ _finishTemplateAlign() {
     .col-vendor { width: 38%; }
     .col-business { width: auto; }
 
-    /* Map container — fixed dimensions so the SVG can't overflow the page */
+ /* Map container — explicit pixel dimensions so the SVG can't overflow the page */
     .map-wrap {
         width: 100%;
         display: flex; align-items: center; justify-content: center;
         overflow: hidden;
+        flex-shrink: 0;
     }
     .map-wrap svg {
-        width: 100% !important;
-        height: 100% !important;
-        max-width: 100% !important;
-        max-height: 100% !important;
         display: block;
-        object-fit: contain;
     }
-    /* On-screen preview: give the map area an explicit height matching what print will use */
-    .page-landscape .map-wrap { height: 6.8in; }
-    .page-portrait .map-wrap { height: 8.5in; }
+    /* Landscape page: map area is 10.2in wide x 6.5in tall (11x8.5 page - 0.4in margins - title space) */
+    .page-landscape .map-wrap { width: 10.2in; height: 6.5in; }
+    .page-landscape .map-wrap svg { width: 10.2in !important; height: 6.5in !important; max-width: 10.2in !important; max-height: 6.5in !important; }
+    /* Portrait page: map area is 7.7in wide x 8.0in tall */
+    .page-portrait .map-wrap { width: 7.7in; height: 8.0in; }
+    .page-portrait .map-wrap svg { width: 7.7in !important; height: 8.0in !important; max-width: 7.7in !important; max-height: 8.0in !important; }
 
     @media print {
         .instructions, .print-btn-wrap { display: none !important; }
@@ -3508,8 +3507,10 @@ _finishTemplateAlign() {
         .print-page { box-shadow: none !important; margin: 0 !important; padding: 0 !important; width: 100% !important; min-height: 0 !important; }
         .title-space { border: none !important; }
         .title-space::before { content: '' !important; }
-        .page-landscape .map-wrap { height: 6.5in !important; width: 100% !important; }
-        .page-portrait .map-wrap { height: 8in !important; width: 100% !important; }
+        .page-landscape .map-wrap { width: 10.2in !important; height: 6.5in !important; }
+        .page-landscape .map-wrap svg { width: 10.2in !important; height: 6.5in !important; }
+        .page-portrait .map-wrap { width: 7.7in !important; height: 8.0in !important; }
+        .page-portrait .map-wrap svg { width: 7.7in !important; height: 8.0in !important; }
     }
 </style>
 </head>
