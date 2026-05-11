@@ -810,6 +810,16 @@ body {
                     <button id="btn-print" class="btn btn-secondary btn-sm">Print</button>
                     <button id="btn-quadrant-grid" class="btn btn-secondary btn-sm" title="Show 4-quadrant overlay on the map">Toggle Quadrant Grid</button>
                     <button id="btn-print-vendor-list" class="btn btn-primary btn-sm" title="Print vendor list + map (two pages)">Print Vendor List</button>
+                    <button id="btn-duplicate-event" class="btn btn-secondary btn-sm" title="Clone this event into a new one (keeps map, positions, and vendor data)">Duplicate Event</button>
+                </div>
+                <div id="quadrant-print-buttons" style="display:none;margin-top:8px;">
+                    <div style="font-size:10px;color:rgba(255,255,255,0.55);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Print by Quadrant</div>
+                    <div class="button-group">
+                        <button id="btn-print-q1" class="btn btn-secondary btn-sm" style="flex:1;min-width:60px;">Q1 (TL)</button>
+                        <button id="btn-print-q2" class="btn btn-secondary btn-sm" style="flex:1;min-width:60px;">Q2 (TR)</button>
+                        <button id="btn-print-q3" class="btn btn-secondary btn-sm" style="flex:1;min-width:60px;">Q3 (BR)</button>
+                        <button id="btn-print-q4" class="btn btn-secondary btn-sm" style="flex:1;min-width:60px;">Q4 (BL)</button>
+                    </div>
                 </div>
                 <div id="diagnostics-panel" class="hidden">
                     <div id="diagnostics-content"></div>
@@ -3221,6 +3231,11 @@ _finishTemplateAlign() {
         this._on('btn-print', 'click', () => window.print());
         this._on('btn-quadrant-grid', 'click', () => this.toggleQuadrantGrid());
         this._on('btn-print-vendor-list', 'click', () => this.printVendorList());
+        this._on('btn-duplicate-event', 'click', () => this.duplicateEvent());
+        this._on('btn-print-q1', 'click', () => this.printVendorList(1));
+        this._on('btn-print-q2', 'click', () => this.printVendorList(2));
+        this._on('btn-print-q3', 'click', () => this.printVendorList(3));
+        this._on('btn-print-q4', 'click', () => this.printVendorList(4));
         this._on('btn-diagnostics', 'click', () => this.toggleDiagnostics());
         this._on('btn-upload-map', 'click', () => this._showUploadDlg());
         this._on('btn-paste-template', 'click', () => this._showPasteTemplateDlg());
@@ -3273,6 +3288,8 @@ _finishTemplateAlign() {
             existing.remove();
             if (btn) { btn.classList.remove('btn-primary'); btn.classList.add('btn-secondary'); }
             this.quadrantGridOn = false;
+            const qPanel = document.getElementById('quadrant-print-buttons');
+            if (qPanel) qPanel.style.display = 'none';
             this.notify('Quadrant grid OFF');
             return;
         }
@@ -3353,20 +3370,49 @@ _finishTemplateAlign() {
         svg.appendChild(g);
         if (btn) { btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary'); }
         this.quadrantGridOn = true;
+        const qPanel = document.getElementById('quadrant-print-buttons');
+        if (qPanel) qPanel.style.display = 'block';
         this.notify('Quadrant grid ON — 1=TL, 2=TR, 3=BR, 4=BL');
     }
 
     // ===== PRINT VENDOR LIST =====
-    printVendorList() {
+    printVendorList(quadrantFilter) {
         const svg = document.querySelector('#map-content svg');
         if (!svg) { this.notify('No map loaded', 'error'); return; }
         const data = this.eventsData[this.currentEvent];
         if (!data || !data.booths) { this.notify('No booth data available', 'error'); return; }
 
         // Build sorted vendor list (assigned booths only)
-        const assigned = Object.values(data.booths).filter(b => b.boothStatus === 'assigned' && (b.vendorName || b.businessName));
+        let assigned = Object.values(data.booths).filter(b => b.boothStatus === 'assigned' && (b.vendorName || b.businessName));
         if (!assigned.length) { this.notify('No assigned vendors to print', 'error'); return; }
 
+        // Quadrant filter — if specified, keep only booths whose center falls in that quadrant
+        if (quadrantFilter) {
+            const svgEl = document.querySelector('#map-content svg');
+            const vbStr = (svgEl?.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+            let vx = 0, vy = 0, vw = 1000, vh = 1000;
+            if (vbStr.length === 4 && vbStr.every(n => !isNaN(n))) [vx, vy, vw, vh] = vbStr;
+            const midX = vx + vw / 2;
+            const midY = vy + vh / 2;
+            // Quadrant numbering: 1=TL, 2=TR, 3=BR, 4=BL
+            const inQuadrant = (cx, cy) => {
+                if (quadrantFilter === 1) return cx < midX && cy < midY;
+                if (quadrantFilter === 2) return cx >= midX && cy < midY;
+                if (quadrantFilter === 3) return cx >= midX && cy >= midY;
+                if (quadrantFilter === 4) return cx < midX && cy >= midY;
+                return true;
+            };
+            assigned = assigned.filter(b => {
+                const el = document.getElementById(`booth-${b.boothId}`) || document.getElementById(b.boothId);
+                if (!el) return false;
+                const bx = parseFloat(el.getAttribute('x')) || 0;
+                const by = parseFloat(el.getAttribute('y')) || 0;
+                const bw = parseFloat(el.getAttribute('width')) || 0;
+                const bh = parseFloat(el.getAttribute('height')) || 0;
+                return inQuadrant(bx + bw / 2, by + bh / 2);
+            });
+            if (!assigned.length) { this.notify(`No assigned vendors in Quadrant ${quadrantFilter}`, 'error'); return; }
+        }
         // Sort by booth number — numeric where possible, then alphanumeric
         assigned.sort((a, b) => {
             const sa = String(a.boothId), sb = String(b.boothId);
@@ -3400,6 +3446,8 @@ _finishTemplateAlign() {
 
         // Get event name from the visible title
         const eventName = document.getElementById('event-title')?.textContent || 'Event';
+        const quadrantLabel = quadrantFilter ? ` — Quadrant ${quadrantFilter}` : '';
+        const isQuadrantPrint = !!quadrantFilter;
 
         // Escape helper
         const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -3532,7 +3580,7 @@ _finishTemplateAlign() {
         </div>
     </div>
 
-    <!-- Page 1: Vendor List -->
+   <!-- Page 1: Vendor List -->
     <div class="print-page page-${mapNaturalLandscape ? 'landscape' : 'portrait'}">
         <div class="title-space"></div>
         <div class="vendor-list-wrap">
@@ -3551,12 +3599,12 @@ _finishTemplateAlign() {
         </div>
     </div>
 
+    ${isQuadrantPrint ? '' : `
     <!-- Page 2: Map -->
     <div class="print-page page-${mapNaturalLandscape ? 'landscape' : 'portrait'}">
         <div class="title-space"></div>
         <div class="map-wrap">${svgString}</div>
-    </div>
-
+    </div>`}
 <script>
     // Auto-trigger print dialog after page loads (small delay so SVG renders first)
     window.addEventListener('load', () => { setTimeout(() => window.print(), 600); });
@@ -3573,7 +3621,109 @@ _finishTemplateAlign() {
         w.document.open();
         w.document.write(html);
         w.document.close();
-        this.notify(`Print view opened — ${assigned.length} vendors, map is ${mapOrientation}`);
+        const noteMsg = quadrantFilter
+            ? `Quadrant ${quadrantFilter} print — ${assigned.length} vendors`
+            : `Print view opened — ${assigned.length} vendors, map is ${mapOrientation}`;
+        this.notify(noteMsg);
+    }
+
+    // ===== DUPLICATE EVENT =====
+    duplicateEvent() {
+        const sourceId = this.currentEvent;
+        const sourceCfg = this.eventsConfig[sourceId];
+        if (!sourceCfg) { this.notify('No event to duplicate', 'error'); return; }
+
+        const sourceData = this.eventsData[sourceId];
+        const boothCount = sourceData ? Object.keys(sourceData.booths || {}).length : 0;
+        const assignedCount = sourceData ? Object.values(sourceData.booths || {}).filter(b => b.boothStatus === 'assigned').length : 0;
+
+        // Prompt for new event name
+        const defaultName = `${sourceCfg.name} (Copy)`;
+        const newName = prompt(
+            `Duplicate "${sourceCfg.name}"?\n\n` +
+            `This will create a new event with the same map, ${boothCount} booth positions, and ${assignedCount} assigned vendors.\n\n` +
+            `Enter a name for the new event:`,
+            defaultName
+        );
+        if (!newName || !newName.trim()) return;
+        const trimmedName = newName.trim();
+
+        // Ask if vendor data should be kept or cleared
+        const keepVendors = confirm(
+            `Keep vendor data?\n\n` +
+            `Click OK to copy vendor names, businesses, categories, etc. from "${sourceCfg.name}".\n` +
+            `Click Cancel to start with a clean slate (positions only, no vendor data).`
+        );
+
+        // Generate a new custom event ID
+        const newId = 'custom_' + Date.now().toString(36);
+
+        // Get the current SVG (from localStorage if saved, otherwise from DOM)
+        const liveSvg = document.querySelector('#map-content svg');
+        const svgString = this._svgGet(sourceId) || (liveSvg ? liveSvg.outerHTML : null);
+
+        if (!svgString) { this.notify('Could not capture source map', 'error'); return; }
+
+        // Strip transient attributes (transforms, etc.) from the captured SVG
+        const cleanedSvg = svgString.replace(/style="[^"]*transform[^"]*"/gi, '');
+
+        // Build the new event config (as a custom event so it can be deleted later)
+        const newCfg = {
+            id: newId,
+            name: trimmedName,
+            mapFile: null,
+            dataFile: null,
+            width: sourceCfg.width || null,
+            height: sourceCfg.height || null,
+        };
+        const customs = this._getCustom();
+        customs[newId] = newCfg;
+        this._saveCustom(customs);
+        this.eventsConfig[newId] = newCfg;
+
+        // Save the SVG for the new event
+        try { localStorage.setItem(`boothmap_svg_${newId}`, cleanedSvg); } catch (e) {
+            this.notify('Storage full — try Reset Map on an old event first', 'error');
+            return;
+        }
+
+        // Build the new event data
+        let newBooths = {};
+        if (sourceData && sourceData.booths) {
+            Object.entries(sourceData.booths).forEach(([bid, b]) => {
+                if (keepVendors) {
+                    newBooths[bid] = JSON.parse(JSON.stringify(b));
+                } else {
+                    // Keep only positional/identity info; reset everything else
+                    newBooths[bid] = {
+                        boothId: b.boothId,
+                        vendorName: '',
+                        businessName: '',
+                        vendorCategory: 'Open',
+                        boothStatus: 'open',
+                        boothSize: b.boothSize || '10x10',
+                        notes: '',
+                        phone: '',
+                        email: '',
+                        missingItems: [],
+                        mapLabel: b.mapLabel || b.boothId,
+                    };
+                }
+            });
+        }
+        this.eventsData[newId] = { eventId: newId, eventName: trimmedName, booths: newBooths };
+        this.originalEventsData[newId] = JSON.parse(JSON.stringify(this.eventsData[newId]));
+        this._lsSet(`boothmap_${newId}`, this.eventsData[newId]);
+
+        // Add to dropdown
+        this._addOpt(newId, trimmedName);
+
+        // Switch to the new event
+        document.getElementById('event-select').value = newId;
+        this.loadEvent(newId);
+
+        this.notify(`"${trimmedName}" created — ${Object.keys(newBooths).length} booths${keepVendors ? ' with vendor data' : ' (cleared)'}`);
+    }
     }
     // ===== UTILITIES =====
     notify(msg, type = '') {
