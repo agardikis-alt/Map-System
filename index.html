@@ -3335,17 +3335,18 @@ _finishTemplateAlign() {
             bgCircle.setAttribute('stroke-width', fontSize * 0.06);
             bgCircle.setAttribute('opacity', '0.92');
             g.appendChild(bgCircle);
-            // Number on top — class 'feature-label-text' bypasses the global text-hiding rule
+            // Number on top — class bypasses hide rule, inline style overrides CSS font-size
             const t = document.createElementNS(NS, 'text');
             t.setAttribute('class', 'feature-label-text');
             t.setAttribute('x', labelX);
             t.setAttribute('y', labelY + fontSize * 0.32);
             t.setAttribute('text-anchor', 'middle');
-            t.setAttribute('font-size', fontSize);
             t.setAttribute('font-weight', '900');
             t.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
             t.setAttribute('fill', '#802446');
             t.setAttribute('opacity', '1');
+            t.style.fontSize = fontSize + 'px';
+            t.style.fontWeight = '900';
             t.textContent = L.num;
             g.appendChild(t);
         });
@@ -3483,17 +3484,23 @@ _finishTemplateAlign() {
     .col-vendor { width: 38%; }
     .col-business { width: auto; }
 
-    /* Map container — uses aspect-ratio-preserving fit, NEVER stretches */
+    /* Map container — fixed dimensions so the SVG can't overflow the page */
     .map-wrap {
-        flex: 1; min-height: 0; width: 100%;
+        width: 100%;
         display: flex; align-items: center; justify-content: center;
         overflow: hidden;
     }
     .map-wrap svg {
-        max-width: 100%; max-height: 100%;
-        width: auto !important; height: auto !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
         display: block;
+        object-fit: contain;
     }
+    /* On-screen preview: give the map area an explicit height matching what print will use */
+    .page-landscape .map-wrap { height: 6.8in; }
+    .page-portrait .map-wrap { height: 8.5in; }
 
     @media print {
         .instructions, .print-btn-wrap { display: none !important; }
@@ -3501,7 +3508,8 @@ _finishTemplateAlign() {
         .print-page { box-shadow: none !important; margin: 0 !important; padding: 0 !important; width: 100% !important; min-height: 0 !important; }
         .title-space { border: none !important; }
         .title-space::before { content: '' !important; }
-        .map-wrap { height: 9in; }
+        .page-landscape .map-wrap { height: 6.5in !important; width: 100% !important; }
+        .page-portrait .map-wrap { height: 8in !important; width: 100% !important; }
     }
 </style>
 </head>
