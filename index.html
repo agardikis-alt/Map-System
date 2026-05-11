@@ -809,6 +809,7 @@ body {
                     <button id="btn-diagnostics" class="btn btn-secondary btn-sm">Diagnostics</button>
                     <button id="btn-print" class="btn btn-secondary btn-sm">Print</button>
                     <button id="btn-quadrant-grid" class="btn btn-secondary btn-sm" title="Show 4-quadrant overlay on the map">Toggle Quadrant Grid</button>
+                    <button id="btn-print-vendor-list" class="btn btn-primary btn-sm" title="Print vendor list + map (two pages)">Print Vendor List</button>
                 </div>
                 <div id="diagnostics-panel" class="hidden">
                     <div id="diagnostics-content"></div>
@@ -3219,6 +3220,7 @@ _finishTemplateAlign() {
         this._on('btn-copy-template', 'click', () => this._showCopyTemplateDlg());
         this._on('btn-print', 'click', () => window.print());
         this._on('btn-quadrant-grid', 'click', () => this.toggleQuadrantGrid());
+        this._on('btn-print-vendor-list', 'click', () => this.printVendorList());
         this._on('btn-diagnostics', 'click', () => this.toggleDiagnostics());
         this._on('btn-upload-map', 'click', () => this._showUploadDlg());
         this._on('btn-paste-template', 'click', () => this._showPasteTemplateDlg());
@@ -3325,7 +3327,10 @@ _finishTemplateAlign() {
             t.setAttribute('font-weight', '900');
             t.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
             t.setAttribute('fill', '#802446');
-            t.setAttribute('opacity', '0.35');
+            t.setAttribute('stroke', '#ffffff');
+            t.setAttribute('stroke-width', fontSize * 0.08);
+            t.setAttribute('paint-order', 'stroke fill');
+            t.setAttribute('opacity', '0.85');
             t.textContent = L.num;
             g.appendChild(t);
         });
@@ -3333,6 +3338,182 @@ _finishTemplateAlign() {
         if (btn) { btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary'); }
         this.quadrantGridOn = true;
         this.notify('Quadrant grid ON — 1=TL, 2=TR, 3=BR, 4=BL');
+    }
+
+    // ===== PRINT VENDOR LIST =====
+    printVendorList() {
+        const svg = document.querySelector('#map-content svg');
+        if (!svg) { this.notify('No map loaded', 'error'); return; }
+        const data = this.eventsData[this.currentEvent];
+        if (!data || !data.booths) { this.notify('No booth data available', 'error'); return; }
+
+        // Build sorted vendor list (assigned booths only)
+        const assigned = Object.values(data.booths).filter(b => b.boothStatus === 'assigned' && (b.vendorName || b.businessName));
+        if (!assigned.length) { this.notify('No assigned vendors to print', 'error'); return; }
+
+        // Sort by booth number — numeric where possible, then alphanumeric
+        assigned.sort((a, b) => {
+            const sa = String(a.boothId), sb = String(b.boothId);
+            const na = parseFloat(sa), nb = parseFloat(sb);
+            const aIsNum = !isNaN(na) && /^\d/.test(sa);
+            const bIsNum = !isNaN(nb) && /^\d/.test(sb);
+            if (aIsNum && bIsNum) return na - nb || sa.localeCompare(sb);
+            if (aIsNum) return -1;
+            if (bIsNum) return 1;
+            return sa.localeCompare(sb, undefined, { numeric: true });
+        });
+
+        // Determine map orientation from viewBox
+        const vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+        let mapW = 1000, mapH = 1000;
+        if (vb.length === 4 && vb.every(n => !isNaN(n))) { mapW = vb[2]; mapH = vb[3]; }
+        const aspect = mapW / mapH;
+        const mapOrientation = aspect > 1.05 ? 'landscape' : 'portrait';
+
+        // Clone the SVG and strip transforms / temporary overlays
+        const cloned = svg.cloneNode(true);
+        cloned.removeAttribute('style');
+        cloned.removeAttribute('width');
+        cloned.removeAttribute('height');
+        cloned.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        // Remove quadrant overlay, paste preview, edit handles
+        cloned.querySelectorAll('#quadrant-overlay, .resize-handle, .rotate-handle, [data-paste-preview]').forEach(el => el.remove());
+        // Strip inline transforms on the root and any wrapper groups
+        cloned.style.cssText = 'width:100%;height:100%;display:block;';
+        const svgString = new XMLSerializer().serializeToString(cloned);
+
+        // Get event name from the visible title
+        const eventName = document.getElementById('event-title')?.textContent || 'Event';
+
+        // Escape helper
+        const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+        // Build vendor table rows
+        const rowsHtml = assigned.map(b => `
+            <tr>
+                <td class="col-booth">${esc(b.mapLabel || b.boothId)}</td>
+                <td class="col-vendor">${esc(b.vendorName || '—')}</td>
+                <td class="col-business">${esc(b.businessName || '—')}</td>
+            </tr>`).join('');
+
+        // Build the print page HTML
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vendor List — ${esc(eventName)}</title>
+<style>
+    @page list-page { size: portrait; margin: 0.4in; }
+    @page map-portrait-page { size: portrait; margin: 0.4in; }
+    @page map-landscape-page { size: landscape; margin: 0.4in; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; font-family: 'Helvetica Neue', Arial, sans-serif; color: #24234b; background: #fff; }
+    .instructions {
+        background: #fffae6; border: 2px solid #802446; padding: 16px 20px; margin: 20px;
+        border-radius: 8px; font-size: 14px; line-height: 1.5; max-width: 700px;
+    }
+    .instructions h2 { margin: 0 0 8px 0; color: #802446; font-size: 18px; }
+    .instructions ul { margin: 8px 0; padding-left: 22px; }
+    .instructions li { margin-bottom: 4px; }
+    .instructions strong { color: #802446; }
+    .print-btn {
+        background: #802446; color: white; border: none; padding: 12px 24px; font-size: 15px;
+        font-weight: 700; border-radius: 6px; cursor: pointer; margin-top: 8px;
+    }
+    .print-btn:hover { background: #6a1d3a; }
+
+    .print-page {
+        background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        margin: 20px auto; padding: 0.4in;
+        display: flex; flex-direction: column;
+    }
+    .page-list { page: list-page; width: 8.5in; min-height: 11in; }
+    .page-map-portrait { page: map-portrait-page; width: 8.5in; min-height: 11in; page-break-before: always; }
+    .page-map-landscape { page: map-landscape-page; width: 11in; min-height: 8.5in; page-break-before: always; }
+
+    .title-space {
+        height: 1.8in; border: 2px dashed #ccc; margin-bottom: 0.25in;
+        display: flex; align-items: center; justify-content: center;
+        color: #bbb; font-style: italic; font-size: 14px; flex-shrink: 0;
+    }
+    .title-space::before { content: 'Custom title goes here (this dashed border will not print)'; }
+
+    table.vendor-list { width: 100%; border-collapse: collapse; font-size: 11pt; }
+    table.vendor-list thead { background: #802446; color: white; }
+    table.vendor-list th { padding: 8px 10px; text-align: left; font-weight: 700; font-size: 11pt; letter-spacing: 0.3px; text-transform: uppercase; }
+    table.vendor-list td { padding: 6px 10px; border-bottom: 1px solid #e8e8e8; vertical-align: top; }
+    table.vendor-list tr:nth-child(even) td { background: #f9f7f8; }
+    .col-booth { width: 70px; font-weight: 700; color: #802446; }
+    .col-vendor { width: 38%; }
+    .col-business { width: auto; }
+
+    .map-wrap { flex: 1; display: flex; align-items: stretch; justify-content: center; min-height: 0; }
+    .map-wrap svg { width: 100%; height: 100%; max-width: 100%; max-height: 100%; }
+
+    @media print {
+        .instructions, .print-btn-wrap { display: none !important; }
+        .print-page { box-shadow: none; margin: 0; padding: 0; }
+        .title-space { border: none !important; }
+        .title-space::before { content: '' !important; }
+        body { background: #fff; }
+    }
+</style>
+</head>
+<body>
+    <div class="instructions">
+        <h2>🖨️ Print Settings — Read Before Printing</h2>
+        <ul>
+            <li><strong>Destination:</strong> your printer (or "Save as PDF")</li>
+            <li><strong>Layout:</strong> leave on "Portrait" — the system handles orientation per page</li>
+            <li><strong>Margins:</strong> Default</li>
+            <li><strong>Uncheck "Headers and footers"</strong> if it's checked (removes the URL and timestamp)</li>
+            <li><strong>Background graphics:</strong> ON (for the maroon header on the vendor list)</li>
+        </ul>
+        <div class="print-btn-wrap">
+            <button class="print-btn" onclick="window.print()">Print Now</button>
+        </div>
+    </div>
+
+    <!-- Page 1: Vendor List (portrait) -->
+    <div class="print-page page-list">
+        <div class="title-space"></div>
+        <table class="vendor-list">
+            <thead>
+                <tr>
+                    <th class="col-booth">Booth #</th>
+                    <th class="col-vendor">Vendor Name</th>
+                    <th class="col-business">Business Name</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rowsHtml}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Page 2: Map (orientation auto-detected) -->
+    <div class="print-page page-map-${mapOrientation}">
+        <div class="title-space"></div>
+        <div class="map-wrap">${svgString}</div>
+    </div>
+
+<script>
+    // Auto-trigger print dialog after page loads (small delay so SVG renders first)
+    window.addEventListener('load', () => { setTimeout(() => window.print(), 600); });
+<\/script>
+</body>
+</html>`;
+
+        // Open in a new tab and write the content
+        const w = window.open('', '_blank');
+        if (!w) {
+            this.notify('Pop-up blocked — please allow pop-ups for this site', 'error');
+            return;
+        }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+        this.notify(`Print view opened — ${assigned.length} vendors, map is ${mapOrientation}`);
     }
     // ===== UTILITIES =====
     notify(msg, type = '') {
