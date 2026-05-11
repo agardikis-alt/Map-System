@@ -808,6 +808,7 @@ body {
                     <button id="btn-delete-event" class="btn btn-danger btn-sm" style="display:none;">Delete Event</button>
                     <button id="btn-diagnostics" class="btn btn-secondary btn-sm">Diagnostics</button>
                     <button id="btn-print" class="btn btn-secondary btn-sm">Print</button>
+                    <button id="btn-quadrant-grid" class="btn btn-secondary btn-sm" title="Show 4-quadrant overlay on the map">Toggle Quadrant Grid</button>
                 </div>
                 <div id="diagnostics-panel" class="hidden">
                     <div id="diagnostics-content"></div>
@@ -3217,6 +3218,7 @@ _finishTemplateAlign() {
         this._on('btn-reset', 'click', () => this._resetMap());
         this._on('btn-copy-template', 'click', () => this._showCopyTemplateDlg());
         this._on('btn-print', 'click', () => window.print());
+        this._on('btn-quadrant-grid', 'click', () => this.toggleQuadrantGrid());
         this._on('btn-diagnostics', 'click', () => this.toggleDiagnostics());
         this._on('btn-upload-map', 'click', () => this._showUploadDlg());
         this._on('btn-paste-template', 'click', () => this._showPasteTemplateDlg());
@@ -3259,6 +3261,79 @@ _finishTemplateAlign() {
 
     toggleDiagnostics() { const p = document.getElementById('diagnostics-panel'); if (p) p.classList.toggle('hidden'); }
 
+    // ===== QUADRANT GRID OVERLAY =====
+    toggleQuadrantGrid() {
+        const svg = document.querySelector('#map-content svg');
+        if (!svg) { this.notify('No map loaded', 'error'); return; }
+        const existing = svg.querySelector('#quadrant-overlay');
+        const btn = document.getElementById('btn-quadrant-grid');
+        if (existing) {
+            existing.remove();
+            if (btn) { btn.classList.remove('btn-primary'); btn.classList.add('btn-secondary'); }
+            this.quadrantGridOn = false;
+            this.notify('Quadrant grid OFF');
+            return;
+        }
+        // Read viewBox to size the overlay
+        const vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+        let x = 0, y = 0, w = 0, h = 0;
+        if (vb.length === 4 && vb.every(n => !isNaN(n))) {
+            [x, y, w, h] = vb;
+        } else {
+            w = parseFloat(svg.getAttribute('width')) || svg.clientWidth || 1000;
+            h = parseFloat(svg.getAttribute('height')) || svg.clientHeight || 1000;
+        }
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+        const NS = 'http://www.w3.org/2000/svg';
+        const g = document.createElementNS(NS, 'g');
+        g.setAttribute('id', 'quadrant-overlay');
+        g.setAttribute('pointer-events', 'none');
+        // Vertical divider
+        const vLine = document.createElementNS(NS, 'line');
+        vLine.setAttribute('x1', cx); vLine.setAttribute('y1', y);
+        vLine.setAttribute('x2', cx); vLine.setAttribute('y2', y + h);
+        vLine.setAttribute('stroke', '#802446');
+        vLine.setAttribute('stroke-width', Math.max(w, h) * 0.003);
+        vLine.setAttribute('stroke-dasharray', `${Math.max(w, h) * 0.012},${Math.max(w, h) * 0.008}`);
+        vLine.setAttribute('opacity', '0.55');
+        g.appendChild(vLine);
+        // Horizontal divider
+        const hLine = document.createElementNS(NS, 'line');
+        hLine.setAttribute('x1', x); hLine.setAttribute('y1', cy);
+        hLine.setAttribute('x2', x + w); hLine.setAttribute('y2', cy);
+        hLine.setAttribute('stroke', '#802446');
+        hLine.setAttribute('stroke-width', Math.max(w, h) * 0.003);
+        hLine.setAttribute('stroke-dasharray', `${Math.max(w, h) * 0.012},${Math.max(w, h) * 0.008}`);
+        hLine.setAttribute('opacity', '0.55');
+        g.appendChild(hLine);
+        // Quadrant labels — 1=TL, 2=TR, 3=BR, 4=BL
+        const fontSize = Math.max(w, h) * 0.05;
+        const inset = Math.max(w, h) * 0.04;
+        const labels = [
+            { num: '1', tx: x + inset,         ty: y + inset + fontSize,     anchor: 'start' },
+            { num: '2', tx: x + w - inset,     ty: y + inset + fontSize,     anchor: 'end'   },
+            { num: '3', tx: x + w - inset,     ty: y + h - inset,            anchor: 'end'   },
+            { num: '4', tx: x + inset,         ty: y + h - inset,            anchor: 'start' },
+        ];
+        labels.forEach(L => {
+            const t = document.createElementNS(NS, 'text');
+            t.setAttribute('x', L.tx);
+            t.setAttribute('y', L.ty);
+            t.setAttribute('text-anchor', L.anchor);
+            t.setAttribute('font-size', fontSize);
+            t.setAttribute('font-weight', '900');
+            t.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
+            t.setAttribute('fill', '#802446');
+            t.setAttribute('opacity', '0.35');
+            t.textContent = L.num;
+            g.appendChild(t);
+        });
+        svg.appendChild(g);
+        if (btn) { btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary'); }
+        this.quadrantGridOn = true;
+        this.notify('Quadrant grid ON — 1=TL, 2=TR, 3=BR, 4=BL');
+    }
     // ===== UTILITIES =====
     notify(msg, type = '') {
         const el = document.createElement('div'); el.className = `notification ${type}`; el.textContent = msg;
