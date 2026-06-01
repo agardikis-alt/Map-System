@@ -3661,6 +3661,399 @@ ensureUI();console.log('[Batch 3] Chain mode loaded.');
 });
 })();
 </script>
-<!-- END BATCH 3 -->
+<!-- ============================================================
+     PRESCOTT CHAMBER BOOTHMAP  —  VENDOR PROFILES MODULE (v1)
+     ------------------------------------------------------------
+     HOW TO INSTALL (GitHub web, no tools needed):
+       1. Open  index.html  in the Map-System repo.
+       2. Scroll to the very bottom and find the line:  </body>
+       3. Paste this ENTIRE block on the line just ABOVE  </body>
+       4. Commit.
+       5. Bump your cache version (?v=N -> ?v=N+1) on your script/SVG
+          references in BOTH index.html and data/events.json.
+       6. Hard refresh the live page (Ctrl + Shift + R).
+
+     WHAT IT TOUCHES:  nothing of yours.
+       - Own styles (.pf-* only) — no collision with your CSS.
+       - Own data (localStorage key "pf_profiles_v1").
+       - Own SVG layer (#pf-badge-layer) it fully owns and repaints.
+       - It only READS window.boothMap. It does NOT edit your class,
+         your booth data, your booth fields, applyColors's data, or
+         the getScreenCTM / _toSvgCoords coordinate math.
+
+     TO REMOVE:  delete this whole block. You are back to exactly today.
+     ============================================================ -->
+<style>
+/* ---- Profiles tab button (sits in the header .controls) ---- */
+.pf-tab-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:6px;font-size:12px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;cursor:pointer;font-family:inherit;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;transition:background .15s}
+.pf-tab-btn:hover{background:rgba(255,255,255,.28)}
+.pf-tab-btn .pf-dot{background:#2e7d32;color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;font-weight:800;line-height:1.4}
+
+/* ---- Overlay panel ---- */
+.pf-overlay{display:none;position:fixed;inset:0;z-index:9500;background:rgba(36,35,75,.55);backdrop-filter:blur(6px);align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.pf-overlay.pf-open{display:flex}
+.pf-panel{background:var(--white,#fff);color:var(--text,#222);width:100%;max-width:920px;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;border:1px solid var(--border,#e3e3e3)}
+.pf-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:var(--cranberry,#802446);color:#fff}
+.pf-head h2{font-size:17px;font-weight:800;margin:0;letter-spacing:.3px}
+.pf-x{background:rgba(255,255,255,.2);border:none;color:#fff;width:30px;height:30px;border-radius:8px;font-size:18px;cursor:pointer;line-height:1}
+.pf-body{padding:16px 20px;max-height:75vh;overflow:auto}
+.pf-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.pf-btn{padding:8px 14px;border-radius:7px;border:1px solid var(--border,#ddd);background:var(--bg,#f4f4f7);color:var(--text,#222);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+.pf-btn:hover{filter:brightness(.97)}
+.pf-btn.primary{background:var(--navy,#24234B);color:#fff;border-color:var(--navy,#24234B)}
+.pf-btn.green{background:#2e7d32;color:#fff;border-color:#2e7d32}
+.pf-search{flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border,#ddd);border-radius:7px;font-size:13px;font-family:inherit}
+
+/* ---- Cards + detail ---- */
+.pf-card{border:1px solid var(--border,#e3e3e3);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--card,#fff)}
+.pf-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.pf-name{font-weight:800;font-size:14px}
+.pf-sub{font-size:12px;color:var(--muted,#777)}
+.pf-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px}
+.pf-chip.complete{background:#e6f4ea;color:#1e7a34;border:1px solid #b7e0c2}
+.pf-chip.incomplete{background:#fdecea;color:#b3261e;border:1px solid #f6c7c2}
+.pf-detail{margin-top:12px;padding-top:12px;border-top:1px dashed var(--border,#ddd);display:none}
+.pf-detail.open{display:block}
+.pf-row{display:flex;align-items:center;gap:8px;font-size:12.5px;margin:6px 0;flex-wrap:wrap}
+.pf-status-ok{color:#1e7a34;font-weight:800}
+.pf-status-bad{color:#b3261e;font-weight:800}
+.pf-photos{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;width:100%}
+.pf-photos img{width:74px;height:74px;object-fit:cover;border-radius:8px;border:1px solid var(--border,#ddd);display:block}
+.pf-field{margin:10px 0}
+.pf-field label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--muted,#777);margin-bottom:4px}
+.pf-field input,.pf-field select,.pf-field textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border,#ddd);border-radius:7px;font-size:13px;font-family:inherit;background:#fff;color:#222}
+.pf-field textarea{min-height:58px;resize:vertical}
+.pf-inline{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;text-transform:none;letter-spacing:0;color:var(--text,#222)}
+.pf-inline input{width:auto}
+.pf-empty{text-align:center;color:var(--muted,#888);padding:30px 10px;font-size:13px}
+.pf-mini{font-size:11px;color:var(--muted,#888);margin-top:4px}
+
+/* ---- SVG completeness badge ---- */
+.pf-badge circle{fill:#2e7d32;stroke:#fff;stroke-width:1.5}
+.pf-badge text{fill:#fff;font-family:Arial,sans-serif;font-weight:900}
+</style>
+
+<script>
+(function(){
+"use strict";
+
+var LS_KEY = "pf_profiles_v1";
+var profiles = {};       // id -> profile record
+var editingId = null;
+
+/* ---------------- storage ---------------- */
+function load(){ try{ profiles = JSON.parse(localStorage.getItem(LS_KEY)) || {}; }catch(e){ profiles = {}; } }
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(profiles)); }catch(e){ console.warn("pf save", e); } }
+function uid(){ return "p" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+/* ---------------- completeness rules ---------------- */
+function coiValid(p){
+  if(!p.coiOnFile) return false;
+  if(p.coiAnnual) return true;                 // year-round COI = always green
+  if(!p.coiExpiry) return false;
+  var today = new Date(); today.setHours(0,0,0,0);
+  var exp = new Date(p.coiExpiry + "T23:59:59");
+  return exp >= today;                          // green until the exp date passes
+}
+function isComplete(p){
+  return coiValid(p) && !!p.marketingVerified && Array.isArray(p.photos) && p.photos.length > 0;
+}
+function coiText(p){
+  if(!p.coiOnFile) return {cls:"pf-status-bad", txt:"No COI on file"};
+  if(p.coiAnnual)  return {cls:"pf-status-ok",  txt:"Annual / year-round"};
+  if(!p.coiExpiry) return {cls:"pf-status-bad", txt:"COI on file - no expiry set"};
+  var ok = coiValid(p);
+  return {cls: ok ? "pf-status-ok" : "pf-status-bad", txt:(ok ? "Valid through " : "EXPIRED ") + p.coiExpiry};
+}
+
+/* ---------------- pull live assigned vendors from the map ---------------- */
+function liveVendors(){
+  var out = [], seen = {};
+  var bm = window.boothMap;
+  if(!bm || !bm.eventsData) return out;
+  Object.keys(bm.eventsData).forEach(function(ev){
+    var bs = (bm.eventsData[ev] || {}).booths || {};
+    Object.keys(bs).forEach(function(bid){
+      var b = bs[bid]; if(!b || b.boothStatus !== "assigned") return;
+      var name = (b.businessName || b.vendorName || "").trim(); if(!name) return;
+      var key = name.toLowerCase();
+      var label = ev + " - " + (b.mapLabel || bid);
+      if(seen[key]){ seen[key].booths.push(label); return; }
+      var rec = { businessName:b.businessName||"", vendorName:b.vendorName||"", category:b.vendorCategory||"", booths:[label] };
+      seen[key] = rec; out.push(rec);
+    });
+  });
+  out.sort(function(a,b){ return (a.businessName||a.vendorName).localeCompare(b.businessName||b.vendorName); });
+  return out;
+}
+
+/* ---------------- map completeness badges (additive SVG layer) ---------------- */
+function paintBadges(){
+  var bm = window.boothMap; if(!bm) return;
+  var svg = document.querySelector("#map-content svg"); if(!svg) return;
+  var ev = bm.currentEvent;
+  var booths = ((bm.eventsData || {})[ev] || {}).booths || {};
+
+  // name -> complete? (match profiles to booths by name)
+  var nameMap = {};
+  Object.keys(profiles).forEach(function(id){
+    var p = profiles[id]; if(!isComplete(p)) return;
+    if(p.businessName) nameMap[p.businessName.trim().toLowerCase()] = true;
+    if(p.vendorName)   nameMap[p.vendorName.trim().toLowerCase()]   = true;
+  });
+
+  var layer = svg.querySelector("#pf-badge-layer");
+  if(!layer){
+    layer = document.createElementNS("http://www.w3.org/2000/svg","g");
+    layer.setAttribute("id","pf-badge-layer");
+    svg.appendChild(layer);            // appended last = drawn on top
+  }
+  layer.innerHTML = "";
+
+  Object.keys(booths).forEach(function(bid){
+    var b = booths[bid]; if(!b) return;
+    var name = (b.businessName || b.vendorName || "").trim().toLowerCase();
+    if(!name || !nameMap[name]) return;
+
+    var el = document.getElementById("booth-" + bid) || document.getElementById(bid);
+    if(!el || typeof el.getBBox !== "function") return;
+    var bb; try{ bb = el.getBBox(); }catch(e){ return; }
+    if(!bb || !bb.width) return;
+
+    var r  = Math.max(6, Math.min(13, Math.min(bb.width, bb.height) * 0.2));
+    var cx = bb.x + bb.width - r * 0.9;
+    var cy = bb.y + r * 0.9;
+
+    var g = document.createElementNS("http://www.w3.org/2000/svg","g");
+    g.setAttribute("class","pf-badge");
+    g.setAttribute("pointer-events","none");
+    var c = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    c.setAttribute("cx",cx); c.setAttribute("cy",cy); c.setAttribute("r",r);
+    var t = document.createElementNS("http://www.w3.org/2000/svg","text");
+    t.setAttribute("x",cx); t.setAttribute("y",cy);
+    t.setAttribute("text-anchor","middle"); t.setAttribute("dominant-baseline","central");
+    t.setAttribute("font-size", r * 1.3);
+    t.textContent = "\u2713";
+    g.appendChild(c); g.appendChild(t); layer.appendChild(g);
+  });
+}
+
+/* ---------------- hook into boothMap without editing it ---------------- */
+function hook(){
+  var bm = window.boothMap; if(!bm) return false;
+  if(!bm.__pfWrapped && typeof bm.applyColors === "function"){
+    var orig = bm.applyColors.bind(bm);
+    bm.applyColors = function(){ var rv = orig(); try{ paintBadges(); }catch(e){ console.warn("pf badge", e); } return rv; };
+    bm.__pfWrapped = true;
+  }
+  var sel = document.getElementById("event-select");
+  if(sel && !sel.__pfBound){ sel.addEventListener("change", function(){ setTimeout(paintBadges,150); }); sel.__pfBound = true; }
+  setTimeout(paintBadges,200);
+  return true;
+}
+
+/* ---------------- inject the Profiles tab next to the event dropdown ---------------- */
+function injectTab(){
+  var controls = document.querySelector(".header .controls") || document.querySelector(".controls");
+  if(!controls || document.getElementById("pf-tab-btn")) return;
+  var btn = document.createElement("button");
+  btn.id = "pf-tab-btn"; btn.className = "pf-tab-btn"; btn.type = "button";
+  btn.innerHTML = '\uD83D\uDCCB Profiles <span class="pf-dot" id="pf-count">0</span>';
+  var wrap = controls.querySelector(".select-wrapper");
+  if(wrap && wrap.nextSibling) controls.insertBefore(btn, wrap.nextSibling);
+  else controls.appendChild(btn);
+  btn.addEventListener("click", openOverlay);
+  updateCount();
+}
+function updateCount(){
+  var n = Object.keys(profiles).filter(function(id){ return isComplete(profiles[id]); }).length;
+  var el = document.getElementById("pf-count"); if(el) el.textContent = n;
+}
+
+/* ---------------- overlay ---------------- */
+function buildOverlay(){
+  if(document.getElementById("pf-overlay")) return;
+  var ov = document.createElement("div");
+  ov.id = "pf-overlay"; ov.className = "pf-overlay";
+  ov.innerHTML =
+    '<div class="pf-panel" role="dialog" aria-label="Vendor Profiles">'
+    + '<div class="pf-head"><h2>Vendor Profiles</h2><button class="pf-x" id="pf-close">&times;</button></div>'
+    + '<div class="pf-body">'
+    +   '<div class="pf-toolbar">'
+    +     '<button class="pf-btn primary" id="pf-add">+ New Profile</button>'
+    +     '<input class="pf-search" id="pf-search" placeholder="Search profiles...">'
+    +     '<button class="pf-btn" id="pf-export">Export</button>'
+    +     '<button class="pf-btn" id="pf-import">Import</button>'
+    +     '<input type="file" id="pf-import-file" accept="application/json" style="display:none">'
+    +   '</div>'
+    +   '<div id="pf-list"></div>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener("click", function(e){ if(e.target === ov) closeOverlay(); });
+  document.getElementById("pf-close").addEventListener("click", closeOverlay);
+  document.getElementById("pf-add").addEventListener("click", function(){ editingId = null; showForm(null); });
+  document.getElementById("pf-search").addEventListener("input", renderList);
+  document.getElementById("pf-export").addEventListener("click", exportJson);
+  document.getElementById("pf-import").addEventListener("click", function(){ document.getElementById("pf-import-file").click(); });
+  document.getElementById("pf-import-file").addEventListener("change", importJson);
+}
+function openOverlay(){ buildOverlay(); renderList(); document.getElementById("pf-overlay").classList.add("pf-open"); }
+function closeOverlay(){ var ov = document.getElementById("pf-overlay"); if(ov) ov.classList.remove("pf-open"); paintBadges(); updateCount(); }
+
+/* ---------------- list + cards ---------------- */
+function renderList(){
+  var list = document.getElementById("pf-list"); if(!list) return;
+  var q = (document.getElementById("pf-search").value || "").toLowerCase().trim();
+  var ids = Object.keys(profiles).sort(function(a,b){
+    var na = (profiles[a].businessName || profiles[a].vendorName || "").toLowerCase();
+    var nb = (profiles[b].businessName || profiles[b].vendorName || "").toLowerCase();
+    return na.localeCompare(nb);
+  });
+  if(q) ids = ids.filter(function(id){
+    var p = profiles[id];
+    return ((p.businessName||"") + " " + (p.vendorName||"") + " " + (p.category||"")).toLowerCase().indexOf(q) >= 0;
+  });
+  if(!ids.length){ list.innerHTML = '<div class="pf-empty">No profiles yet. Click <b>+ New Profile</b> to add one.</div>'; return; }
+  list.innerHTML = ids.map(cardHtml).join("");
+  ids.forEach(bindCard);
+}
+function photosHtml(p){
+  if(!p.photos || !p.photos.length) return "";
+  return '<div class="pf-photos">' + p.photos.map(function(u){
+    u = esc(u);
+    return '<a href="' + u + '" target="_blank" rel="noopener"><img src="' + u + '" alt="" onerror="this.style.display=\'none\'"></a>';
+  }).join("") + '</div>';
+}
+function cardHtml(id){
+  var p = profiles[id], comp = isComplete(p), coi = coiText(p);
+  return ''
+  + '<div class="pf-card" data-id="' + id + '">'
+  +   '<div class="pf-card-top">'
+  +     '<div><div class="pf-name">' + esc(p.businessName || p.vendorName || "Unnamed") + '</div>'
+  +       '<div class="pf-sub">' + esc(p.vendorName || "") + (p.category ? " &middot; " + esc(p.category) : "") + '</div></div>'
+  +     '<span class="pf-chip ' + (comp ? "complete" : "incomplete") + '">' + (comp ? "\u2713 Complete" : "Incomplete") + '</span>'
+  +   '</div>'
+  +   '<div class="pf-row">'
+  +     '<button class="pf-btn" data-act="see" data-id="' + id + '">See Profile</button>'
+  +     '<button class="pf-btn" data-act="edit" data-id="' + id + '">Edit</button>'
+  +     '<button class="pf-btn" data-act="del" data-id="' + id + '">Delete</button>'
+  +   '</div>'
+  +   '<div class="pf-detail" id="pf-detail-' + id + '">'
+  +     '<div class="pf-row">COI: <span class="' + coi.cls + '">' + esc(coi.txt) + '</span></div>'
+  +     '<div class="pf-row">Marketing verification: <span class="' + (p.marketingVerified ? "pf-status-ok" : "pf-status-bad") + '">' + (p.marketingVerified ? "\u2713 Verified" : "Not verified") + '</span></div>'
+  +     '<div class="pf-row">Photos: <span class="' + ((p.photos && p.photos.length) ? "pf-status-ok" : "pf-status-bad") + '">' + ((p.photos && p.photos.length) ? p.photos.length + " on file" : "None") + '</span></div>'
+  +     photosHtml(p)
+  +     (p.notes ? '<div class="pf-row" style="align-items:flex-start">Notes: <span>' + esc(p.notes) + '</span></div>' : "")
+  +   '</div>'
+  + '</div>';
+}
+function bindCard(id){
+  var card = document.querySelector('.pf-card[data-id="' + id + '"]'); if(!card) return;
+  card.querySelectorAll("[data-act]").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var act = btn.getAttribute("data-act");
+      if(act === "see"){ var d = document.getElementById("pf-detail-" + id); if(d) d.classList.toggle("open"); }
+      else if(act === "edit"){ editingId = id; showForm(profiles[id]); }
+      else if(act === "del"){ if(confirm("Delete this profile?")){ delete profiles[id]; save(); renderList(); updateCount(); paintBadges(); } }
+    });
+  });
+}
+
+/* ---------------- add / edit form ---------------- */
+function showForm(p){
+  buildOverlay();
+  var list = document.getElementById("pf-list"); if(!list) return;
+  p = p || {};
+  var vendors = liveVendors();
+  window.__pfVendors = vendors;
+  var opts = '<option value="">- pick an assigned vendor (auto-fill) -</option>' + vendors.map(function(v,i){
+    var label = (v.businessName || v.vendorName) + (v.vendorName && v.businessName ? " (" + v.vendorName + ")" : "") + " - " + v.booths.join(", ");
+    return '<option value="' + i + '">' + esc(label) + '</option>';
+  }).join("");
+
+  list.innerHTML = ''
+  + '<div class="pf-card">'
+  +   '<div class="pf-field"><label>Quick fill from map</label><select id="pf-pick">' + opts + '</select><div class="pf-mini">Optional - pulls business/vendor name + category straight from an assigned booth.</div></div>'
+  +   '<div class="pf-field"><label>Business name</label><input id="pf-f-biz" value="' + esc(p.businessName || "") + '"></div>'
+  +   '<div class="pf-field"><label>Vendor name</label><input id="pf-f-vendor" value="' + esc(p.vendorName || "") + '"></div>'
+  +   '<div class="pf-field"><label>Category</label><input id="pf-f-cat" value="' + esc(p.category || "") + '"></div>'
+  +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-coion" ' + (p.coiOnFile ? "checked" : "") + '> COI on file</label></div>'
+  +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-annual" ' + (p.coiAnnual ? "checked" : "") + '> COI is annual / year-round (no expiry)</label></div>'
+  +   '<div class="pf-field"><label>COI expiration date</label><input type="date" id="pf-f-exp" value="' + esc(p.coiExpiry || "") + '"><div class="pf-mini">Shows green until this date passes. Ignored if "annual" is checked.</div></div>'
+  +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-mktg" ' + (p.marketingVerified ? "checked" : "") + '> Marketing verification complete</label></div>'
+  +   '<div class="pf-field"><label>Photo links (one per line)</label><textarea id="pf-f-photos">' + esc((p.photos || []).join("\n")) + '</textarea><div class="pf-mini">Paste image URLs or Google Drive share links.</div></div>'
+  +   '<div class="pf-field"><label>Notes</label><textarea id="pf-f-notes">' + esc(p.notes || "") + '</textarea></div>'
+  +   '<div class="pf-row"><button class="pf-btn green" id="pf-save">Save Profile</button><button class="pf-btn" id="pf-cancel">Cancel</button></div>'
+  + '</div>';
+
+  document.getElementById("pf-pick").addEventListener("change", function(){
+    if(this.value === "") return;
+    var v = window.__pfVendors[+this.value]; if(!v) return;
+    document.getElementById("pf-f-biz").value = v.businessName || "";
+    document.getElementById("pf-f-vendor").value = v.vendorName || "";
+    document.getElementById("pf-f-cat").value = v.category || "";
+  });
+  document.getElementById("pf-cancel").addEventListener("click", renderList);
+  document.getElementById("pf-save").addEventListener("click", function(){
+    var biz = document.getElementById("pf-f-biz").value.trim();
+    var ven = document.getElementById("pf-f-vendor").value.trim();
+    if(!biz && !ven){ alert("Enter a business name or vendor name."); return; }
+    var photos = document.getElementById("pf-f-photos").value.split("\n").map(function(s){ return s.trim(); }).filter(Boolean);
+    var rec = {
+      businessName: biz,
+      vendorName: ven,
+      category: document.getElementById("pf-f-cat").value.trim(),
+      coiOnFile: document.getElementById("pf-f-coion").checked,
+      coiAnnual: document.getElementById("pf-f-annual").checked,
+      coiExpiry: document.getElementById("pf-f-exp").value || "",
+      marketingVerified: document.getElementById("pf-f-mktg").checked,
+      photos: photos,
+      notes: document.getElementById("pf-f-notes").value.trim()
+    };
+    var id = editingId || uid();
+    profiles[id] = Object.assign(profiles[id] || {}, rec);
+    save(); editingId = null; renderList(); updateCount(); paintBadges();
+  });
+}
+
+/* ---------------- export / import (Phase-2 Drive bridge lives here) ---------------- */
+function exportJson(){
+  var blob = new Blob([JSON.stringify(profiles, null, 2)], {type:"application/json"});
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "vendor_profiles.json"; a.click();
+  URL.revokeObjectURL(a.href);
+}
+function importJson(e){
+  var f = e.target.files && e.target.files[0]; if(!f) return;
+  var r = new FileReader();
+  r.onload = function(){
+    try{
+      var data = JSON.parse(r.result);
+      if(data && typeof data === "object"){
+        Object.keys(data).forEach(function(k){ profiles[k] = data[k]; });
+        save(); renderList(); updateCount(); paintBadges(); alert("Imported.");
+      }
+    }catch(err){ alert("Could not read that file."); }
+  };
+  r.readAsText(f); e.target.value = "";
+}
+
+/* ---------------- start ---------------- */
+function start(){
+  load();
+  injectTab();
+  var tries = 0;
+  var iv = setInterval(function(){
+    tries++;
+    if(hook() || tries > 40){ clearInterval(iv); }   // gives boothMap up to ~10s to exist
+  }, 250);
+}
+if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+else start();
+
+})();
+</script>
 </body>
 </html>
