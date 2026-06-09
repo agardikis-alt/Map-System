@@ -395,6 +395,7 @@ body {
 .booth { cursor: pointer; transition: filter 0.1s; }
 .booth:hover { stroke: var(--cranberry) !important; stroke-width: 2.5 !important; filter: brightness(1.06) drop-shadow(0 2px 6px rgba(128,36,70,0.25)); }
 .booth.selected { stroke: var(--navy) !important; stroke-width: 3 !important; filter: drop-shadow(0 0 8px rgba(36,35,75,0.5)); }
+.booth.multi-sel-on { stroke: #F44336 !important; stroke-width: 3 !important; fill: rgba(244,67,54,0.20) !important; }
 .booth.filtered-out { pointer-events: none; opacity: 0.12 !important; }
         .booth.search-match {
     stroke: #7B2D3B !important;
@@ -863,6 +864,7 @@ body {
             <div class="modal-header"><h3>Edit Booth</h3><button id="close-modal" class="btn-close">&times;</button></div>
             <div class="modal-body">
                 <input type="hidden" id="edit-booth-id">
+                <div class="form-group" id="edit-apply-profile-group"><label>Apply Vendor Profile</label><select id="edit-apply-profile"><option value="">- fill from a saved profile -</option></select><div id="edit-pref-space" style="font-size:12px;color:var(--text-mid);margin-top:4px;display:none;font-weight:600;"></div></div>
                 <div class="form-group"><label>Map Label</label><input type="text" id="edit-map-label" placeholder="e.g. 12 or A-4"></div>
                 <div class="form-group"><label>Booth Size</label><input type="text" id="edit-booth-size" placeholder="e.g. 10x10"></div>
                 <div class="form-group"><label>Vendor Name</label><input type="text" id="edit-vendor-name" placeholder="Enter vendor name"></div>
@@ -1120,6 +1122,75 @@ class BoothMapSystem {
     }
     normId(raw){return raw?String(raw).trim().replace(/^booth[_-]/i,''):null;}
     extractId(elId){return elId?this.normId(elId):null;}
+    applyProfileToEdit(id){
+        const PF=window.PFProfiles; const ps=document.getElementById('edit-pref-space');
+        const p=(id&&PF&&PF.get)?PF.get(id):null;
+        if(!p){ if(ps){ps.style.display='none';ps.textContent='';} return; }
+        const setv=(eid,val)=>{ const el=document.getElementById(eid); if(el) el.value=val||''; };
+        setv('edit-vendor-name', p.vendorName);
+        setv('edit-business-name', p.businessName);
+        const cat=document.getElementById('edit-category');
+        if(cat && p.category){ const o=Array.prototype.find.call(cat.options, x=>x.value===p.category); if(o) cat.value=p.category; }
+        setv('edit-phone', p.phone);
+        setv('edit-email', p.email);
+        if(p.notes){ const n=document.getElementById('edit-notes'); if(n) n.value=p.notes; }
+        const st=document.getElementById('edit-status');
+        if(st && st.value==='open' && document.getElementById('edit-vendor-name').value){ st.value='assigned'; if(typeof st.onchange==='function') st.onchange(); }
+        if(ps){ if(p.preferredBoothSpace){ ps.style.display=''; ps.textContent='\u2691 Preferred space: '+p.preferredBoothSpace; } else { ps.style.display='none'; ps.textContent=''; } }
+        this.notify('Filled from profile \u2014 review and Save');
+    }
+    _populateApplyProfile(){
+        const aps=document.getElementById('edit-apply-profile'); const ps=document.getElementById('edit-pref-space');
+        if(ps){ ps.style.display='none'; ps.textContent=''; }
+        if(!aps) return;
+        aps.innerHTML='<option value="">- fill from a saved profile -</option>';
+        const PF=window.PFProfiles;
+        if(PF&&PF.list){ PF.list().forEach(pr=>{ const o=document.createElement('option'); o.value=pr.id; o.textContent=pr.label; aps.appendChild(o); }); }
+        aps.value='';
+        aps.onchange=()=>this.applyProfileToEdit(aps.value);
+    }
+    _toggleMultiSelect(){
+        const svg=document.querySelector('#map-content svg'); if(!svg){ this.notify('No map loaded','error'); return; }
+        this._multiSel=this._multiSel||new Set();
+        this._multiMode=!this._multiMode;
+        const mb=document.getElementById('btn-multi-select');
+        if(this._multiMode){
+            this._onMultiMd=(e)=>{ const tg=e.target; if(tg&&tg.classList&&tg.classList.contains('booth')&&tg.id){ e.preventDefault(); e.stopPropagation(); const id=tg.id; if(this._multiSel.has(id)){ this._multiSel.delete(id); tg.classList.remove('multi-sel-on'); } else { this._multiSel.add(id); tg.classList.add('multi-sel-on'); } this._updateMultiBtn(); } };
+            svg.addEventListener('mousedown', this._onMultiMd, true);
+            if(mb){ mb.style.background='#F44336'; }
+            this.notify('Multi-Select ON \u2014 click booths to highlight, then Delete Selected');
+        } else {
+            if(this._onMultiMd) svg.removeEventListener('mousedown', this._onMultiMd, true);
+            this._clearMultiSel();
+            if(mb){ mb.style.background='rgba(255,255,255,0.2)'; }
+            this.notify('Multi-Select OFF');
+        }
+        this._updateMultiBtn();
+    }
+    _clearMultiSel(){
+        if(this._multiSel){ this._multiSel.forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.remove('multi-sel-on'); }); this._multiSel.clear(); }
+        this._updateMultiBtn();
+    }
+    _updateMultiBtn(){
+        const d=document.getElementById('btn-delete-selected'); const n=this._multiSel?this._multiSel.size:0;
+        if(d){ d.textContent='Delete Selected ('+n+')'; d.disabled=(n===0); d.style.opacity=n?'1':'0.5'; }
+    }
+    _deleteMultiSelected(){
+        const ids=this._multiSel?Array.from(this._multiSel):[];
+        if(!ids.length){ this.notify('Highlight booths first with Multi-Select','error'); return; }
+        if(!confirm('Delete '+ids.length+' booth(s)?\n\nThis removes them and their data from this show.')) return;
+        const data=this.eventsData[this.currentEvent];
+        ids.forEach(id=>{
+            document.querySelector(`#map-content svg .resize-handle[data-id="${id}"]`)?.remove();
+            document.querySelector(`#map-content svg .rotate-handle[data-id="${id}"]`)?.remove();
+            const el=document.getElementById(id); if(el) el.remove();
+            const bid=this.extractId(id);
+            if(data&&data.booths&&data.booths[bid]) delete data.booths[bid];
+        });
+        if(this._multiSel) this._multiSel.clear();
+        this.saveEvent(this.currentEvent); this._persistSvg(); this.updateStats(); this._updateMultiBtn();
+        this.notify('Deleted '+ids.length+' booth(s)');
+    }
     _resetMap() {
         if(!confirm('Clear all vendor info for this show?\n\nBooth positions, labels, and sizes are KEPT \u2014 only vendor name, business, category, status, phone, email and notes are cleared.')) return;
         const d = this.eventsData[this.currentEvent];
@@ -1925,6 +1996,7 @@ _finishTemplateAlign() {
         const _us=document.getElementById('edit-status'),_ug=document.getElementById('edit-unavail-group');
         const _utog=()=>{ _ug.style.display = _us.value==='unavailable' ? '' : 'none'; };
         _us.onchange=_utog; _utog();
+        this._populateApplyProfile();
         m.classList.add('active');
     }
     closeModal(){document.getElementById('edit-modal').classList.remove('active');}
@@ -2093,7 +2165,7 @@ _finishTemplateAlign() {
     showPosToolbar(){
         let t=document.getElementById('position-toolbar');
         if(!t){t=document.createElement('div');t.id='position-toolbar';document.body.appendChild(t);}
-        t.innerHTML=`<div class="toolbar-section"><strong>EDITOR</strong><span id="pos-status" style="margin-left:12px;opacity:0.8;font-size:12px;"></span></div><div class="toolbar-section"><button id="btn-booth" style="background:#4CAF50;color:white;">+ Booth</button><button id="btn-dbl" style="background:#66BB6A;color:white;">++ Dbl</button><button id="btn-rect" style="background:#7E57C2;color:white;">▭ Rect</button><button id="btn-circ" style="background:#42A5F5;color:white;">○ Circ</button><button id="btn-ellipse" style="background:#5C6BC0;color:white;">⬭ Ellip</button><button id="btn-tri" style="background:#FFA726;color:white;">△ Tri</button><button id="btn-hex" style="background:#8D6E63;color:white;">⬡ Hex</button><button id="btn-star" style="background:#EC407A;color:white;">★ Star</button><button id="btn-line" style="background:#78909C;color:white;">/ Line</button><button id="btn-arrow" style="background:#26A69A;color:white;">→ Arrow</button><button id="btn-text" style="background:#AB47BC;color:white;">T Text</button><button id="btn-rename" style="background:rgba(255,255,255,0.2);color:white;border:1px solid rgba(255,255,255,0.4);">Rename</button><button id="btn-delete" style="background:#F44336;color:white;">Delete</button></div><div class="toolbar-section"><button id="btn-export" style="background:#FFD54F;color:#333;">Export SVG</button><button id="btn-done" style="background:rgba(255,255,255,0.2);color:white;border:1px solid rgba(255,255,255,0.4);">Done</button></div>`;
+        t.innerHTML=`<div class="toolbar-section"><strong>EDITOR</strong><span id="pos-status" style="margin-left:12px;opacity:0.8;font-size:12px;"></span></div><div class="toolbar-section"><button id="btn-booth" style="background:#4CAF50;color:white;">+ Booth</button><button id="btn-dbl" style="background:#66BB6A;color:white;">++ Dbl</button><button id="btn-rect" style="background:#7E57C2;color:white;">▭ Rect</button><button id="btn-circ" style="background:#42A5F5;color:white;">○ Circ</button><button id="btn-ellipse" style="background:#5C6BC0;color:white;">⬭ Ellip</button><button id="btn-tri" style="background:#FFA726;color:white;">△ Tri</button><button id="btn-hex" style="background:#8D6E63;color:white;">⬡ Hex</button><button id="btn-star" style="background:#EC407A;color:white;">★ Star</button><button id="btn-line" style="background:#78909C;color:white;">/ Line</button><button id="btn-arrow" style="background:#26A69A;color:white;">→ Arrow</button><button id="btn-text" style="background:#AB47BC;color:white;">T Text</button><button id="btn-rename" style="background:rgba(255,255,255,0.2);color:white;border:1px solid rgba(255,255,255,0.4);">Rename</button><button id="btn-delete" style="background:#F44336;color:white;">Delete</button><button id="btn-multi-select" style="background:rgba(255,255,255,0.2);color:white;border:1px solid rgba(255,255,255,0.4);">Multi-Select</button><button id="btn-delete-selected" style="background:#B71C1C;color:white;opacity:0.5;" disabled>Delete Selected (0)</button></div><div class="toolbar-section"><button id="btn-export" style="background:#FFD54F;color:#333;">Export SVG</button><button id="btn-done" style="background:rgba(255,255,255,0.2);color:white;border:1px solid rgba(255,255,255,0.4);">Done</button></div>`;
         t.querySelector('#btn-export').onclick=()=>this.exportSVG();
         t.querySelector('#btn-done').onclick=()=>this.togglePositionMode();
         t.querySelector('#btn-booth').onclick=()=>this._enterDraw('booth');
@@ -2109,6 +2181,8 @@ _finishTemplateAlign() {
         t.querySelector('#btn-text').onclick=()=>this._enterDraw('text');
         t.querySelector('#btn-rename').onclick=()=>this._promptRename();
         t.querySelector('#btn-delete').onclick=()=>this._deleteSelected();
+        t.querySelector('#btn-multi-select').onclick=()=>this._toggleMultiSelect();
+        t.querySelector('#btn-delete-selected').onclick=()=>this._deleteMultiSelected();
         t.style.display='flex';
     }
     hidePosToolbar(){const t=document.getElementById('position-toolbar');if(t)t.style.display='none';}
@@ -2442,7 +2516,7 @@ _finishTemplateAlign() {
         const svg=document.querySelector('#map-content svg');if(!svg)return;
         const clone=svg.cloneNode(true);
         clone.querySelectorAll('.resize-handle,.rotate-handle,.draw-preview').forEach(el=>el.remove());
-        clone.querySelectorAll('.booth,.feature-el,.feature-text').forEach(b=>{b.style.cursor='';b.style.opacity='';b.style.strokeDasharray='';});
+        clone.querySelectorAll('.booth,.feature-el,.feature-text').forEach(b=>{b.style.cursor='';b.style.opacity='';b.style.strokeDasharray='';b.classList.remove('multi-sel-on');});
         this.saveSvg(this.currentEvent,clone.outerHTML);
     }
 
@@ -2454,6 +2528,8 @@ _finishTemplateAlign() {
         svg.querySelectorAll('.resize-handle,.rotate-handle,.draw-preview').forEach(h=>h.remove());
         svg.querySelectorAll('.booth,.feature-el,.feature-text').forEach(b=>{b.style.cursor='';b.style.opacity='';b.style.strokeDasharray='';});
         this._persistSvg();this.applyColors();this.positionMode=false;
+        if(this._multiMode && this._onMultiMd){ const s2=document.querySelector('#map-content svg'); if(s2) s2.removeEventListener('mousedown',this._onMultiMd,true); }
+        this._multiMode=false; this._clearMultiSel();
         if(this.drawMode)this._exitDraw();
     }
 
@@ -3911,10 +3987,49 @@ var profiles = {};       // id -> profile record
 var editingId = null;
 
 /* ---------------- storage ---------------- */
-function load(){ try{ profiles = JSON.parse(localStorage.getItem(LS_KEY)) || {}; }catch(e){ profiles = {}; } }
+function load(){
+  try{ profiles = JSON.parse(localStorage.getItem(LS_KEY)) || {}; }catch(e){ profiles = {}; }
+  try{ DRIVE_URL = localStorage.getItem("pf_drive_url") || ""; }catch(e){ DRIVE_URL=""; }
+  Object.keys(profiles).forEach(function(id){ var p=profiles[id]||{}; p.photos=normFiles(p.photos,"photo"); p.cois=normFiles(p.cois,"coi"); profiles[id]=p; });
+}
 function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(profiles)); }catch(e){ console.warn("pf save", e); } }
 function uid(){ return "p" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+var DRIVE_URL = "";
+function fileUrl(e){ return typeof e==="string" ? e : ((e && (e.driveUrl || e.src)) || ""); }
+function fileName(e){ if(typeof e==="string"){ return (e.split("/").pop()||"file").split("?")[0]; } return (e && e.name) || (fileUrl(e).split("/").pop()||"file").split("?")[0]; }
+function isDrive(e){ return !!(e && typeof e==="object" && e.driveId); }
+function normFiles(arr,kind){ return (Array.isArray(arr)?arr:[]).map(function(e){ if(typeof e==="string") return {src:e, kind:kind}; e=e||{}; if(!e.kind) e.kind=kind; return e; }); }
+function fileVendor(p){ return ((p.businessName||p.vendorName||"unassigned")+"").trim() || "unassigned"; }
+function setDriveUrl(){
+  var cur = DRIVE_URL || "";
+  var v = prompt("Drive sync endpoint URL (your Apps Script /exec). Leave blank to clear:", cur);
+  if(v===null) return;
+  DRIVE_URL = (v||"").trim();
+  try{ localStorage.setItem("pf_drive_url", DRIVE_URL); }catch(e){}
+  alert(DRIVE_URL ? "Drive endpoint saved." : "Drive endpoint cleared.");
+}
+async function pushFileToDrive(vendor, entry){
+  var res = await fetch(DRIVE_URL, { method:"POST", headers:{"Content-Type":"text/plain"}, redirect:"follow",
+    body: JSON.stringify({ action:"copyUrl", vendor:vendor, kind:entry.kind||"photo", name:entry.name||fileName(entry), sourceUrl:fileUrl(entry) }) });
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  var data = await res.json();
+  if(data && data.driveId){ entry.driveId=data.driveId; entry.driveUrl=data.driveUrl||data.url||entry.src||""; if(data.name) entry.name=data.name; }
+  else throw new Error((data&&data.error)||"no driveId returned");
+  return data;
+}
+async function syncDrive(){
+  if(!DRIVE_URL){ alert("Set your Drive endpoint first (Drive Settings)."); return; }
+  var pending=[];
+  Object.keys(profiles).forEach(function(id){ var p=profiles[id]; ["photos","cois"].forEach(function(k){ (p[k]||[]).forEach(function(e){ if(e && !isDrive(e) && fileUrl(e)){ pending.push({vendor:fileVendor(p), entry:e}); } }); }); });
+  if(!pending.length){ alert("Everything is already in Drive. Nothing to push."); return; }
+  if(!confirm("Push "+pending.length+" file(s) to Drive that aren't there yet?")) return;
+  var ok=0, fail=0;
+  for(var i=0;i<pending.length;i++){ try{ await pushFileToDrive(pending[i].vendor, pending[i].entry); ok++; }catch(e){ console.warn("pf sync", e); fail++; } }
+  save(); renderList(); updateCount(); paintBadges();
+  alert("Synced to Drive: "+ok+" ok"+(fail?(", "+fail+" failed (see console)"):"")+".");
+}
+
 
 /* ---------------- completeness rules ---------------- */
 function coiValid(p){
@@ -3949,7 +4064,7 @@ function liveVendors(){
       var key = name.toLowerCase();
       var label = ev + " - " + (b.mapLabel || bid);
       if(seen[key]){ seen[key].booths.push(label); return; }
-      var rec = { businessName:b.businessName||"", vendorName:b.vendorName||"", category:b.vendorCategory||"", booths:[label] };
+      var rec = { businessName:b.businessName||"", vendorName:b.vendorName||"", category:b.vendorCategory||"", phone:b.phone||"", email:b.email||"", booths:[label] };
       seen[key] = rec; out.push(rec);
     });
   });
@@ -4054,6 +4169,8 @@ function buildOverlay(){
     +     '<input class="pf-search" id="pf-search" placeholder="Search profiles...">'
     +     '<button class="pf-btn" id="pf-export">Export</button>'
     +     '<button class="pf-btn" id="pf-import">Import</button>'
+    +     '<button class="pf-btn" id="pf-drive">Drive Settings</button>'
+    +     '<button class="pf-btn green" id="pf-sync">Sync \u2194 Drive</button>'
     +     '<input type="file" id="pf-import-file" accept="application/json" style="display:none">'
     +   '</div>'
     +   '<div id="pf-list"></div>'
@@ -4067,6 +4184,8 @@ function buildOverlay(){
   document.getElementById("pf-export").addEventListener("click", exportJson);
   document.getElementById("pf-import").addEventListener("click", function(){ document.getElementById("pf-import-file").click(); });
   document.getElementById("pf-import-file").addEventListener("change", importJson);
+  var _ds=document.getElementById("pf-drive"); if(_ds) _ds.addEventListener("click", setDriveUrl);
+  var _sy=document.getElementById("pf-sync"); if(_sy) _sy.addEventListener("click", syncDrive);
 }
 function openOverlay(){ buildOverlay(); renderList(); document.getElementById("pf-overlay").classList.add("pf-open"); }
 function closeOverlay(){ var ov = document.getElementById("pf-overlay"); if(ov) ov.classList.remove("pf-open"); paintBadges(); updateCount(); }
@@ -4089,11 +4208,12 @@ function renderList(){
   ids.forEach(bindCard);
 }
 function photosHtml(p){
-  if(!p.photos || !p.photos.length) return "";
-  return '<div class="pf-photos">' + p.photos.map(function(u){
-    u = esc(u);
-    return '<a href="' + u + '" target="_blank" rel="noopener"><img src="' + u + '" alt="" onerror="this.style.display=\'none\'"></a>';
-  }).join("") + '</div>';
+  var ph = (p.photos||[]).map(function(e){ var u=esc(fileUrl(e)); if(!u) return ""; return '<a href="'+u+'" target="_blank" rel="noopener"><img src="'+u+'" alt="" onerror="this.style.display=\'none\'"></a>'; }).filter(Boolean).join("");
+  return ph ? '<div class="pf-photos">'+ph+'</div>' : "";
+}
+function coisHtml(p){
+  if(!p.cois || !p.cois.length) return "";
+  return '<div class="pf-row" style="align-items:flex-start">COI files: <span>' + p.cois.map(function(e){ var u=esc(fileUrl(e)); var nm=esc(fileName(e)); return u?('<a href="'+u+'" target="_blank" rel="noopener">'+nm+'</a>'+(isDrive(e)?'':' \u26a0\ufe0f')):nm; }).join(", ") + '</span></div>';
 }
 function cardHtml(id){
   var p = profiles[id], comp = isComplete(p), coi = coiText(p);
@@ -4114,6 +4234,9 @@ function cardHtml(id){
   +     '<div class="pf-row">Marketing verification: <span class="' + (p.marketingVerified ? "pf-status-ok" : "pf-status-bad") + '">' + (p.marketingVerified ? "\u2713 Verified" : "Not verified") + '</span></div>'
   +     '<div class="pf-row">Photos: <span class="' + ((p.photos && p.photos.length) ? "pf-status-ok" : "pf-status-bad") + '">' + ((p.photos && p.photos.length) ? p.photos.length + " on file" : "None") + '</span></div>'
   +     photosHtml(p)
+  +     coisHtml(p)
+  +     (p.preferredBoothSpace ? '<div class="pf-row">Preferred space: <span class="pf-status-ok">' + esc(p.preferredBoothSpace) + '</span></div>' : "")
+  +     ((p.phone||p.email) ? '<div class="pf-row">Contact: <span>' + esc([p.phone,p.email].filter(Boolean).join("  |  ")) + '</span></div>' : "")
   +     (p.notes ? '<div class="pf-row" style="align-items:flex-start">Notes: <span>' + esc(p.notes) + '</span></div>' : "")
   +   '</div>'
   + '</div>';
@@ -4135,7 +4258,35 @@ function showForm(p){
   buildOverlay();
   var list = document.getElementById("pf-list"); if(!list) return;
   p = p || {};
+  var formPhotos = (p.photos||[]).slice();
+  var formCois   = (p.cois||[]).slice();
+  function b64(file){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(String(r.result).split(",")[1]||""); }; r.onerror=rej; r.readAsDataURL(file); }); }
+  function renderFiles(){
+    var pl=document.getElementById("pf-photo-list");
+    if(pl){ pl.innerHTML = formPhotos.map(function(e,i){ var u=esc(fileUrl(e)); if(!u) return ""; return '<span style="position:relative;display:inline-block;"><a href="'+u+'" target="_blank" rel="noopener"><img src="'+u+'" alt="" onerror="this.style.display=\'none\'"></a><button type="button" data-i="'+i+'" data-k="photo" class="pf-rmfile" style="position:absolute;top:-6px;right:-6px;background:#b3261e;color:#fff;border:none;border-radius:50%;width:18px;height:18px;cursor:pointer;font-size:11px;line-height:1;">&times;</button>'+(isDrive(e)?'':'<span title="not yet in Drive" style="position:absolute;bottom:-2px;left:-2px;">\u26a0\ufe0f</span>')+'</span>'; }).filter(Boolean).join(""); }
+    var cl=document.getElementById("pf-coi-list");
+    if(cl){ cl.innerHTML = formCois.length ? formCois.map(function(e,i){ var u=esc(fileUrl(e)); var nm=esc(fileName(e)); return '<div style="margin:3px 0;">'+(u?('<a href="'+u+'" target="_blank" rel="noopener">'+nm+'</a>'):nm)+(isDrive(e)?'':' <span title="not yet in Drive">\u26a0\ufe0f</span>')+' <button type="button" data-i="'+i+'" data-k="coi" class="pf-rmfile" style="background:#b3261e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;padding:1px 6px;">remove</button></div>'; }).join("") : '<span class="pf-mini">No COI files yet.</span>'; }
+    document.querySelectorAll(".pf-rmfile").forEach(function(btn){ btn.onclick=function(){ var i=+btn.getAttribute("data-i"), k=btn.getAttribute("data-k"); if(k==="coi") formCois.splice(i,1); else formPhotos.splice(i,1); renderFiles(); }; });
+  }
+  async function uploadFiles(kind, files){
+    if(!DRIVE_URL){ alert("Set your Drive endpoint first (Drive Settings) to upload files."); return; }
+    var vendor = ((document.getElementById("pf-f-biz").value || document.getElementById("pf-f-vendor").value || "unassigned")+"").trim();
+    for(var i=0;i<files.length;i++){ var f=files[i];
+      try{
+        var data64 = await b64(f);
+        var res = await fetch(DRIVE_URL, { method:"POST", headers:{"Content-Type":"text/plain"}, redirect:"follow",
+          body: JSON.stringify({ action:"upload", vendor:vendor, kind:kind, name:f.name, mime:f.type, data:data64 }) });
+        if(!res.ok) throw new Error("HTTP "+res.status);
+        var d = await res.json();
+        if(d && d.driveId){ var entry={ name:d.name||f.name, kind:kind, driveId:d.driveId, driveUrl:d.driveUrl||d.url||"" }; if(kind==="coi") formCois.push(entry); else formPhotos.push(entry); }
+        else throw new Error((d&&d.error)||"no driveId returned");
+      }catch(e){ console.warn("pf upload", e); alert("Upload failed for "+f.name+" \u2014 check the endpoint/console."); }
+    }
+    renderFiles();
+  }
   var vendors = liveVendors();
+  var pfCats = (window.boothMap && window.boothMap.categories) ? Object.keys(window.boothMap.categories) : [];
+  var catOpts = '<option value="">- none -</option>' + pfCats.map(function(c){ return '<option value="'+esc(c)+'"'+(p.category===c?' selected':'')+'>'+esc(c)+'</option>'; }).join("");
   window.__pfVendors = vendors;
   var opts = '<option value="">- pick an assigned vendor (auto-fill) -</option>' + vendors.map(function(v,i){
     var label = (v.businessName || v.vendorName) + (v.vendorName && v.businessName ? " (" + v.vendorName + ")" : "") + " - " + v.booths.join(", ");
@@ -4147,15 +4298,23 @@ function showForm(p){
   +   '<div class="pf-field"><label>Quick fill from map</label><select id="pf-pick">' + opts + '</select><div class="pf-mini">Optional - pulls business/vendor name + category straight from an assigned booth.</div></div>'
   +   '<div class="pf-field"><label>Business name</label><input id="pf-f-biz" value="' + esc(p.businessName || "") + '"></div>'
   +   '<div class="pf-field"><label>Vendor name</label><input id="pf-f-vendor" value="' + esc(p.vendorName || "") + '"></div>'
-  +   '<div class="pf-field"><label>Category</label><input id="pf-f-cat" value="' + esc(p.category || "") + '"></div>'
+  +   '<div class="pf-field"><label>Category</label><select id="pf-f-cat">' + catOpts + '</select><div class="pf-mini">Same list as the booth category dropdown.</div></div>'
+  +   '<div class="pf-field"><label>Phone</label><input id="pf-f-phone" value="' + esc(p.phone || "") + '"></div>'
+  +   '<div class="pf-field"><label>Email</label><input id="pf-f-email" value="' + esc(p.email || "") + '"></div>'
+  +   '<div class="pf-field"><label>Preferred booth space</label><input id="pf-f-pref" value="' + esc(p.preferredBoothSpace || "") + '"><div class="pf-mini">Shown when you apply this profile to a booth.</div></div>'
   +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-coion" ' + (p.coiOnFile ? "checked" : "") + '> COI on file</label></div>'
   +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-annual" ' + (p.coiAnnual ? "checked" : "") + '> COI is annual / year-round (no expiry)</label></div>'
   +   '<div class="pf-field"><label>COI expiration date</label><input type="date" id="pf-f-exp" value="' + esc(p.coiExpiry || "") + '"><div class="pf-mini">Shows green until this date passes. Ignored if "annual" is checked.</div></div>'
   +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-mktg" ' + (p.marketingVerified ? "checked" : "") + '> Marketing verification complete</label></div>'
-  +   '<div class="pf-field"><label>Photo links (one per line)</label><textarea id="pf-f-photos">' + esc((p.photos || []).join("\n")) + '</textarea><div class="pf-mini">Paste image URLs or Google Drive share links.</div></div>'
+  +   '<div class="pf-field"><label>Photos</label><div id="pf-photo-list" class="pf-photos"></div><input type="file" id="pf-photo-up" accept="image/*" multiple style="margin-top:6px;font-size:12px;"><div class="pf-mini">Upload from device (\u2192 Drive), or paste URLs below.</div><textarea id="pf-f-photos" placeholder="Paste photo / Drive / JotForm URLs, one per line"></textarea></div>'
+  +   '<div class="pf-field"><label>COI file(s)</label><div id="pf-coi-list"></div><input type="file" id="pf-coi-up" accept="application/pdf,image/*" multiple style="margin-top:6px;font-size:12px;"><div class="pf-mini">Upload COI (PDF/image \u2192 Drive), or paste a COI URL below.</div><textarea id="pf-f-cois" placeholder="Paste COI URLs, one per line"></textarea></div>'
   +   '<div class="pf-field"><label>Notes</label><textarea id="pf-f-notes">' + esc(p.notes || "") + '</textarea></div>'
   +   '<div class="pf-row"><button class="pf-btn green" id="pf-save">Save Profile</button><button class="pf-btn" id="pf-cancel">Cancel</button></div>'
   + '</div>';
+
+  renderFiles();
+  var _pu=document.getElementById("pf-photo-up"); if(_pu) _pu.addEventListener("change", function(){ uploadFiles("photo", this.files); this.value=""; });
+  var _cu=document.getElementById("pf-coi-up"); if(_cu) _cu.addEventListener("change", function(){ uploadFiles("coi", this.files); this.value=""; });
 
   document.getElementById("pf-pick").addEventListener("change", function(){
     if(this.value === "") return;
@@ -4163,22 +4322,32 @@ function showForm(p){
     document.getElementById("pf-f-biz").value = v.businessName || "";
     document.getElementById("pf-f-vendor").value = v.vendorName || "";
     document.getElementById("pf-f-cat").value = v.category || "";
+    var _ph=document.getElementById("pf-f-phone"); if(_ph) _ph.value = v.phone || "";
+    var _em=document.getElementById("pf-f-email"); if(_em) _em.value = v.email || "";
   });
   document.getElementById("pf-cancel").addEventListener("click", renderList);
   document.getElementById("pf-save").addEventListener("click", function(){
     var biz = document.getElementById("pf-f-biz").value.trim();
     var ven = document.getElementById("pf-f-vendor").value.trim();
     if(!biz && !ven){ alert("Enter a business name or vendor name."); return; }
-    var photos = document.getElementById("pf-f-photos").value.split("\n").map(function(s){ return s.trim(); }).filter(Boolean);
+    var photoUrls = document.getElementById("pf-f-photos").value.split("\n").map(function(s){ return s.trim(); }).filter(Boolean).map(function(u){ return {src:u, kind:"photo"}; });
+    var coiEl = document.getElementById("pf-f-cois");
+    var coiUrls = (coiEl?coiEl.value:"").split("\n").map(function(s){ return s.trim(); }).filter(Boolean).map(function(u){ return {src:u, kind:"coi"}; });
+    var photos = formPhotos.concat(photoUrls);
+    var cois = formCois.concat(coiUrls);
     var rec = {
       businessName: biz,
       vendorName: ven,
       category: document.getElementById("pf-f-cat").value.trim(),
+      phone: (document.getElementById("pf-f-phone")||{}).value ? document.getElementById("pf-f-phone").value.trim() : "",
+      email: (document.getElementById("pf-f-email")||{}).value ? document.getElementById("pf-f-email").value.trim() : "",
+      preferredBoothSpace: (document.getElementById("pf-f-pref")||{}).value ? document.getElementById("pf-f-pref").value.trim() : "",
       coiOnFile: document.getElementById("pf-f-coion").checked,
       coiAnnual: document.getElementById("pf-f-annual").checked,
       coiExpiry: document.getElementById("pf-f-exp").value || "",
       marketingVerified: document.getElementById("pf-f-mktg").checked,
       photos: photos,
+      cois: cois,
       notes: document.getElementById("pf-f-notes").value.trim()
     };
     var id = editingId || uid();
@@ -4210,6 +4379,18 @@ function importJson(e){
 }
 
 /* ---------------- start ---------------- */
+/* ---------------- bridge so boothMap can "apply profile to booth" ---------------- */
+window.PFProfiles = {
+  all: function(){ return profiles; },
+  get: function(id){ if(!profiles[id]) return null; var p=profiles[id]; return {
+    id:id, businessName:p.businessName||"", vendorName:p.vendorName||"", category:p.category||"",
+    phone:p.phone||"", email:p.email||"", notes:p.notes||"", preferredBoothSpace:p.preferredBoothSpace||"", photos:normFiles(p.photos,"photo"), cois:normFiles(p.cois,"coi") }; },
+  list: function(){ return Object.keys(profiles).map(function(id){ var p=profiles[id]; return {
+      id:id,
+      label:(p.businessName||p.vendorName||"Unnamed")+(p.category?" \u2014 "+p.category:"")+(p.preferredBoothSpace?"  [pref "+p.preferredBoothSpace+"]":"")
+    }; }).sort(function(a,b){ return (a.label||"").localeCompare(b.label||""); }); }
+};
+
 function start(){
   load();
   injectTab();
