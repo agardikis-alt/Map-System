@@ -4213,8 +4213,13 @@ function renderList(){
   list.innerHTML = ids.map(cardHtml).join("");
   ids.forEach(bindCard);
 }
+function photoImgSrc(e){
+  // Drive "/view" links can't be used as <img src>; build a renderable thumbnail from the file id.
+  if(e && e.driveId) return "https://drive.google.com/thumbnail?id=" + encodeURIComponent(e.driveId) + "&sz=w1600";
+  return fileUrl(e);
+}
 function photosHtml(p){
-  var ph = (p.photos||[]).map(function(e){ var u=esc(fileUrl(e)); if(!u) return ""; return '<a href="'+u+'" target="_blank" rel="noopener"><img src="'+u+'" alt="" onerror="this.style.display=\'none\'"></a>'; }).filter(Boolean).join("");
+  var ph = (p.photos||[]).map(function(e){ var view=esc(fileUrl(e)); var img=esc(photoImgSrc(e)); if(!img && !view) return ""; var href=view||img; return '<a href="'+href+'" target="_blank" rel="noopener"><img src="'+img+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"></a>'; }).filter(Boolean).join("");
   return ph ? '<div class="pf-photos">'+ph+'</div>' : "";
 }
 function coisHtml(p){
@@ -4235,18 +4240,21 @@ function cardHtml(id){
   +     '<button class="pf-btn" data-act="edit" data-id="' + id + '">Edit</button>'
   +     '<button class="pf-btn" data-act="del" data-id="' + id + '">Delete</button>'
   +   '</div>'
-  +   '<div class="pf-detail" id="pf-detail-' + id + '">'
+  +   '<div class="pf-detail" id="pf-detail-' + id + '">' + detailHtml(p) + '</div>'
+  + '</div>';
+}
+function detailHtml(p){
+  var coi = coiText(p);
+  return ''
   +     '<div class="pf-row">COI: <span class="' + coi.cls + '">' + esc(coi.txt) + '</span></div>'
   +     '<div class="pf-row">Marketing verification: <span class="' + (p.marketingVerified ? "pf-status-ok" : "pf-status-bad") + '">' + (p.marketingVerified ? "\u2713 Verified" : "Not verified") + '</span></div>'
-  +     '<div class="pf-row">Photos: <span class="' + (pfHasPhotos(p) ? "pf-status-ok" : "pf-status-bad") + '">' + ((p.photos && p.photos.length) ? p.photos.length + " on file" : (Number(p.photoCount)>0 ? p.photoCount + " in Drive (open to load)" : "None")) + '</span></div>'
+  +     '<div class="pf-row">Photos: <span class="' + (pfHasPhotos(p) ? "pf-status-ok" : "pf-status-bad") + '">' + ((p.photos && p.photos.length) ? p.photos.length + " on file" : (Number(p.photoCount)>0 ? p.photoCount + " uploaded — open to load" : "None")) + '</span></div>'
   +     photosHtml(p)
   +     coisHtml(p)
   +     (p.preferredBoothSpace ? '<div class="pf-row">Preferred space: <span class="pf-status-ok">' + esc(p.preferredBoothSpace) + '</span></div>' : "")
   +     (p.tpt ? '<div class="pf-row">TPT / Tax ID: <span>' + esc(p.tpt) + '</span></div>' : "")
   +     ((p.phone||p.email) ? '<div class="pf-row">Contact: <span>' + esc([p.phone,p.email].filter(Boolean).join("  |  ")) + '</span></div>' : "")
-  +     (p.notes ? '<div class="pf-row" style="align-items:flex-start">Notes: <span>' + esc(p.notes) + '</span></div>' : "")
-  +   '</div>'
-  + '</div>';
+  +     (p.notes ? '<div class="pf-row" style="align-items:flex-start">Notes: <span>' + esc(p.notes) + '</span></div>' : "");
 }
 function bindCard(id){
   var card = document.querySelector('.pf-card[data-id="' + id + '"]'); if(!card) return;
@@ -4476,8 +4484,8 @@ async function enrichProfileFiles(id){
     if(got){
       p._filesLoaded = true;
       save();                                                // persists to localStorage
-      if(typeof renderList==="function") renderList();
-      var d=document.getElementById("pf-detail-"+id); if(d) d.classList.add("open");
+      var d=document.getElementById("pf-detail-"+id);        // update THIS card in place (no scroll jump)
+      if(d){ d.innerHTML = detailHtml(p); d.classList.add("open"); }
       if(typeof updateCount==="function") updateCount();
       if(typeof paintBadges==="function") paintBadges();
     }
