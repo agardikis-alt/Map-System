@@ -1136,7 +1136,7 @@ class BoothMapSystem {
         if(p.notes){ const n=document.getElementById('edit-notes'); if(n) n.value=p.notes; }
         const st=document.getElementById('edit-status');
         if(st && st.value==='open' && document.getElementById('edit-vendor-name').value){ st.value='assigned'; if(typeof st.onchange==='function') st.onchange(); }
-        if(ps){ if(p.preferredBoothSpace){ ps.style.display=''; ps.textContent='\u2691 Preferred space: '+p.preferredBoothSpace; } else { ps.style.display='none'; ps.textContent=''; } }
+        if(ps){ var _bits=[]; if(p.preferredBoothSpace) _bits.push('\u2691 Preferred space: '+p.preferredBoothSpace); if(p.tpt) _bits.push('TPT/Tax ID: '+p.tpt); if(_bits.length){ ps.style.display=''; ps.textContent=_bits.join('   \u2022   '); } else { ps.style.display='none'; ps.textContent=''; } }
         this.notify('Filled from profile \u2014 review and Save');
     }
     _populateApplyProfile(){
@@ -4033,6 +4033,7 @@ async function syncDrive(){
 
 /* ---------------- completeness rules ---------------- */
 function coiValid(p){
+  if(p.coiStatus==="Complete") return true;   // pipeline is authoritative: COI on file & complete
   if(!p.coiOnFile) return false;
   if(p.coiAnnual) return true;                 // year-round COI = always green
   if(!p.coiExpiry) return false;
@@ -4040,10 +4041,12 @@ function coiValid(p){
   var exp = new Date(p.coiExpiry + "T23:59:59");
   return exp >= today;                          // green until the exp date passes
 }
+function pfHasPhotos(p){ return (Array.isArray(p.photos) && p.photos.length > 0) || (Number(p.photoCount) > 0); }
 function isComplete(p){
-  return coiValid(p) && !!p.marketingVerified && Array.isArray(p.photos) && p.photos.length > 0;
+  return coiValid(p) && !!p.marketingVerified && pfHasPhotos(p);
 }
 function coiText(p){
+  if(p.coiStatus==="Complete") return {cls:"pf-status-ok", txt:"Verified by pipeline"+(p.coiLink?" (link on file)":"")};
   if(!p.coiOnFile) return {cls:"pf-status-bad", txt:"No COI on file"};
   if(p.coiAnnual)  return {cls:"pf-status-ok",  txt:"Annual / year-round"};
   if(!p.coiExpiry) return {cls:"pf-status-bad", txt:"COI on file - no expiry set"};
@@ -4132,7 +4135,7 @@ function hook(){
     bm.__pfWrapped = true;
   }
   var sel = document.getElementById("event-select");
-  if(sel && !sel.__pfBound){ sel.addEventListener("change", function(){ setTimeout(paintBadges,150); }); sel.__pfBound = true; }
+  if(sel && !sel.__pfBound){ sel.addEventListener("change", function(){ setTimeout(paintBadges,150); if(_pfEndpoint()) setTimeout(function(){ pullFromPipeline(true).then(function(){ renderList(); updateCount(); paintBadges(); }).catch(function(){}); }, 200); }); sel.__pfBound = true; }
   setTimeout(paintBadges,200);
   return true;
 }
@@ -4171,6 +4174,7 @@ function buildOverlay(){
     +     '<button class="pf-btn" id="pf-import">Import</button>'
     +     '<button class="pf-btn" id="pf-drive">Drive Settings</button>'
     +     '<button class="pf-btn green" id="pf-sync">Sync \u2194 Drive</button>'
+    +     '<button class="pf-btn" id="pf-pull">Pull from JotForm</button>'
     +     '<input type="file" id="pf-import-file" accept="application/json" style="display:none">'
     +   '</div>'
     +   '<div id="pf-list"></div>'
@@ -4186,8 +4190,10 @@ function buildOverlay(){
   document.getElementById("pf-import-file").addEventListener("change", importJson);
   var _ds=document.getElementById("pf-drive"); if(_ds) _ds.addEventListener("click", setDriveUrl);
   var _sy=document.getElementById("pf-sync"); if(_sy) _sy.addEventListener("click", syncDrive);
+  var _pl=document.getElementById("pf-pull"); if(_pl) _pl.addEventListener("click", function(){ pullFromPipeline(false); });
 }
-function openOverlay(){ buildOverlay(); renderList(); document.getElementById("pf-overlay").classList.add("pf-open"); }
+function openOverlay(){ buildOverlay(); renderList(); document.getElementById("pf-overlay").classList.add("pf-open");
+  if(_pfEndpoint()){ pullFromPipeline(true).then(function(){ renderList(); updateCount(); paintBadges(); }).catch(function(){}); } }
 function closeOverlay(){ var ov = document.getElementById("pf-overlay"); if(ov) ov.classList.remove("pf-open"); paintBadges(); updateCount(); }
 
 /* ---------------- list + cards ---------------- */
@@ -4232,10 +4238,11 @@ function cardHtml(id){
   +   '<div class="pf-detail" id="pf-detail-' + id + '">'
   +     '<div class="pf-row">COI: <span class="' + coi.cls + '">' + esc(coi.txt) + '</span></div>'
   +     '<div class="pf-row">Marketing verification: <span class="' + (p.marketingVerified ? "pf-status-ok" : "pf-status-bad") + '">' + (p.marketingVerified ? "\u2713 Verified" : "Not verified") + '</span></div>'
-  +     '<div class="pf-row">Photos: <span class="' + ((p.photos && p.photos.length) ? "pf-status-ok" : "pf-status-bad") + '">' + ((p.photos && p.photos.length) ? p.photos.length + " on file" : "None") + '</span></div>'
+  +     '<div class="pf-row">Photos: <span class="' + (pfHasPhotos(p) ? "pf-status-ok" : "pf-status-bad") + '">' + ((p.photos && p.photos.length) ? p.photos.length + " on file" : (Number(p.photoCount)>0 ? p.photoCount + " in Drive (open to load)" : "None")) + '</span></div>'
   +     photosHtml(p)
   +     coisHtml(p)
   +     (p.preferredBoothSpace ? '<div class="pf-row">Preferred space: <span class="pf-status-ok">' + esc(p.preferredBoothSpace) + '</span></div>' : "")
+  +     (p.tpt ? '<div class="pf-row">TPT / Tax ID: <span>' + esc(p.tpt) + '</span></div>' : "")
   +     ((p.phone||p.email) ? '<div class="pf-row">Contact: <span>' + esc([p.phone,p.email].filter(Boolean).join("  |  ")) + '</span></div>' : "")
   +     (p.notes ? '<div class="pf-row" style="align-items:flex-start">Notes: <span>' + esc(p.notes) + '</span></div>' : "")
   +   '</div>'
@@ -4246,7 +4253,7 @@ function bindCard(id){
   card.querySelectorAll("[data-act]").forEach(function(btn){
     btn.addEventListener("click", function(){
       var act = btn.getAttribute("data-act");
-      if(act === "see"){ var d = document.getElementById("pf-detail-" + id); if(d) d.classList.toggle("open"); }
+      if(act === "see"){ var d = document.getElementById("pf-detail-" + id); if(d) d.classList.toggle("open"); if(d && d.classList.contains("open")) enrichProfileFiles(id); }
       else if(act === "edit"){ editingId = id; showForm(profiles[id]); }
       else if(act === "del"){ if(confirm("Delete this profile?")){ delete profiles[id]; save(); renderList(); updateCount(); paintBadges(); } }
     });
@@ -4302,6 +4309,7 @@ function showForm(p){
   +   '<div class="pf-field"><label>Phone</label><input id="pf-f-phone" value="' + esc(p.phone || "") + '"></div>'
   +   '<div class="pf-field"><label>Email</label><input id="pf-f-email" value="' + esc(p.email || "") + '"></div>'
   +   '<div class="pf-field"><label>Preferred booth space</label><input id="pf-f-pref" value="' + esc(p.preferredBoothSpace || "") + '"><div class="pf-mini">Shown when you apply this profile to a booth.</div></div>'
+  +   '<div class="pf-field"><label>TPT / Tax ID</label><input id="pf-f-tpt" value="' + esc(p.tpt || "") + '"><div class="pf-mini">Arizona TPT / tax ID. Shown when you apply this profile to a booth.</div></div>'
   +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-coion" ' + (p.coiOnFile ? "checked" : "") + '> COI on file</label></div>'
   +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-annual" ' + (p.coiAnnual ? "checked" : "") + '> COI is annual / year-round (no expiry)</label></div>'
   +   '<div class="pf-field"><label>COI expiration date</label><input type="date" id="pf-f-exp" value="' + esc(p.coiExpiry || "") + '"><div class="pf-mini">Shows green until this date passes. Ignored if "annual" is checked.</div></div>'
@@ -4342,6 +4350,7 @@ function showForm(p){
       phone: (document.getElementById("pf-f-phone")||{}).value ? document.getElementById("pf-f-phone").value.trim() : "",
       email: (document.getElementById("pf-f-email")||{}).value ? document.getElementById("pf-f-email").value.trim() : "",
       preferredBoothSpace: (document.getElementById("pf-f-pref")||{}).value ? document.getElementById("pf-f-pref").value.trim() : "",
+      tpt: (document.getElementById("pf-f-tpt")||{}).value ? document.getElementById("pf-f-tpt").value.trim() : "",
       coiOnFile: document.getElementById("pf-f-coion").checked,
       coiAnnual: document.getElementById("pf-f-annual").checked,
       coiExpiry: document.getElementById("pf-f-exp").value || "",
@@ -4380,11 +4389,109 @@ function importJson(e){
 
 /* ---------------- start ---------------- */
 /* ---------------- bridge so boothMap can "apply profile to booth" ---------------- */
+/* ---------------- pull vendor profiles from the pipeline (JotForm + Drive) ---------------- */
+// Map event keys don't all match the pipeline's CONFIG.EVENTS keys.
+var PIPE_EVENT_KEY = { territorial:"territorial", laborday:"laborday", bluegrass:"bluegrass", fallshow:"fall", offstreet:null };
+function _pfEmail(s){ return String(s||"").trim().toLowerCase(); }
+function findProfileByEmailOrBiz(email, biz){
+  var te=_pfEmail(email), tb=String(biz||"").trim().toLowerCase(), ids=Object.keys(profiles);
+  if(te){ for(var i=0;i<ids.length;i++){ if(_pfEmail(profiles[ids[i]].email)===te) return ids[i]; } }
+  if(tb){ for(var j=0;j<ids.length;j++){ if(String(profiles[ids[j]].businessName||"").trim().toLowerCase()===tb) return ids[j]; } }
+  return null;
+}
+function _pfEndpoint(){ try{ return localStorage.getItem("pf_drive_url") || DRIVE_URL || ""; }catch(e){ return DRIVE_URL || ""; } }
+async function pullFromPipeline(silent){
+  var endpoint = _pfEndpoint();
+  if(!endpoint){ if(!silent) alert("Set your pipeline endpoint first (Drive Settings)."); return; }
+  var bm = window.boothMap;
+  var mapKey = (bm && bm.currentEvent) ? bm.currentEvent : "";
+  var pipeKey = PIPE_EVENT_KEY.hasOwnProperty(mapKey) ? PIPE_EVENT_KEY[mapKey] : mapKey;
+  if(pipeKey === null){ if(!silent) alert("The pipeline doesn't track \""+mapKey+"\" vendors (OFFStreet uses a separate system), so there's nothing to pull for this show."); return; }
+  if(!pipeKey){ if(!silent) alert("Pick a show first, then pull."); return; }
+  var url = endpoint + (endpoint.indexOf("?")>=0?"&":"?") + "action=profiles&event=" + encodeURIComponent(pipeKey);
+  var data;
+  try{
+    var res = await fetch(url, { method:"GET", redirect:"follow" });
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    data = await res.json();
+  }catch(e){ console.warn("pf pull", e); if(!silent) alert("Pull failed: "+e.message+"\n(Check the endpoint is deployed with \"Anyone\" access.)"); return; }
+  if(!data || !data.ok){ if(!silent) alert("Pull returned an error: "+((data&&data.error)||"unknown")); return; }
+  var rows = data.profiles || [], created=0, updated=0;
+  rows.forEach(function(r){
+    var id = findProfileByEmailOrBiz(r.email, r.businessName), isNew=!id;
+    if(isNew){ id = uid(); profiles[id] = { id:id, photos:[], cois:[] }; }
+    var p = profiles[id];
+    // JotForm-authoritative identity (only overwrite when the pull has a value)
+    if(r.businessName) p.businessName = r.businessName;
+    if(r.vendorName)   p.vendorName   = r.vendorName;
+    if(r.category)     p.category     = r.category;
+    if(r.phone)        p.phone        = r.phone;
+    if(r.email)        p.email        = r.email;
+    if(r.tpt)          p.tpt          = r.tpt;
+    if(typeof r.photoCount === "number") p.photoCount = r.photoCount;
+    // pipeline-authoritative compliance status
+    p.coiStatus = r.coiStatus || "";
+    p.mvfStatus = r.mvfStatus || "";
+    p.vendorFileStatus = r.vendorFileStatus || "";
+    if(r.coiLink) p.coiLink = r.coiLink;
+    if(r.coiStatus === "Complete" || r.coiLink) p.coiOnFile = true;
+    p.marketingVerified = (r.mvfStatus === "Complete");
+    if(r.submissionId) p.submissionId = r.submissionId;
+    p.photos = normFiles(p.photos,"photo"); p.cois = normFiles(p.cois,"coi");
+    if(isNew) created++; else updated++;
+  });
+  save(); if(typeof renderList==="function") renderList(); if(typeof updateCount==="function") updateCount(); if(typeof paintBadges==="function") paintBadges();
+  if(!silent) alert("Pulled "+rows.length+" vendor(s) from JotForm: "+created+" new, "+updated+" updated.");
+  return { created:created, updated:updated, total:rows.length };
+}
+
+/* ---- load ONE vendor's Drive files on demand, then cache locally ---- */
+var _enrichInFlight = {};
+function mergeFiles(existing, incoming, kind){
+  var out = normFiles(existing, kind);
+  (Array.isArray(incoming)?incoming:[]).forEach(function(f){
+    var url = (f && (f.url||f.driveUrl)) || ""; if(!url) return;
+    var dup = out.some(function(e){ return fileUrl(e)===url || (f.id && e.driveId===f.id); });
+    if(!dup) out.push({ name:f.name||((url.split("/").pop()||"file")), driveId:f.id||"", driveUrl:url, src:url, kind:kind });
+  });
+  return out;
+}
+async function enrichProfileFiles(id){
+  var p = profiles[id]; if(!p) return;
+  if(p._filesLoaded || _enrichInFlight[id]) return;        // cached after first load
+  var endpoint = _pfEndpoint(); if(!endpoint || !p.email) return;
+  var bm = window.boothMap; var mapKey = (bm && bm.currentEvent) ? bm.currentEvent : "";
+  var pipeKey = PIPE_EVENT_KEY.hasOwnProperty(mapKey) ? PIPE_EVENT_KEY[mapKey] : mapKey;
+  if(!pipeKey) return;
+  _enrichInFlight[id] = true;
+  try{
+    var url = endpoint + (endpoint.indexOf("?")>=0?"&":"?") + "action=profile&event=" + encodeURIComponent(pipeKey) + "&email=" + encodeURIComponent(p.email);
+    var res = await fetch(url, { method:"GET", redirect:"follow" });
+    if(res.ok){
+      var data = await res.json();
+      if(data && data.ok){
+        p.photos    = mergeFiles(p.photos,    data.photos,    "photo");
+        p.cois      = mergeFiles(p.cois,      data.cois,      "coi");
+        p.marketing = mergeFiles(p.marketing, data.marketing, "marketing");
+        p._filesLoaded = true;
+        save();                                              // persists to localStorage
+        if(typeof renderList==="function") renderList();
+        var d=document.getElementById("pf-detail-"+id); if(d) d.classList.add("open");
+        if(typeof updateCount==="function") updateCount();
+        if(typeof paintBadges==="function") paintBadges();
+      }
+    }
+  }catch(e){ console.warn("pf enrich", e); }
+  _enrichInFlight[id] = false;
+}
+
 window.PFProfiles = {
   all: function(){ return profiles; },
+  pull: function(s){ return pullFromPipeline(s); },
+  loadFiles: function(id){ return enrichProfileFiles(id); },
   get: function(id){ if(!profiles[id]) return null; var p=profiles[id]; return {
     id:id, businessName:p.businessName||"", vendorName:p.vendorName||"", category:p.category||"",
-    phone:p.phone||"", email:p.email||"", notes:p.notes||"", preferredBoothSpace:p.preferredBoothSpace||"", photos:normFiles(p.photos,"photo"), cois:normFiles(p.cois,"coi") }; },
+    phone:p.phone||"", email:p.email||"", notes:p.notes||"", preferredBoothSpace:p.preferredBoothSpace||"", tpt:p.tpt||"", photos:normFiles(p.photos,"photo"), cois:normFiles(p.cois,"coi") }; },
   list: function(){ return Object.keys(profiles).map(function(id){ var p=profiles[id]; return {
       id:id,
       label:(p.businessName||p.vendorName||"Unnamed")+(p.category?" \u2014 "+p.category:"")+(p.preferredBoothSpace?"  [pref "+p.preferredBoothSpace+"]":"")
