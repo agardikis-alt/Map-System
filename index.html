@@ -4403,12 +4403,8 @@ function _pfEndpoint(){ try{ return localStorage.getItem("pf_drive_url") || DRIV
 async function pullFromPipeline(silent){
   var endpoint = _pfEndpoint();
   if(!endpoint){ if(!silent) alert("Set your pipeline endpoint first (Drive Settings)."); return; }
-  var bm = window.boothMap;
-  var mapKey = (bm && bm.currentEvent) ? bm.currentEvent : "";
-  var pipeKey = PIPE_EVENT_KEY.hasOwnProperty(mapKey) ? PIPE_EVENT_KEY[mapKey] : mapKey;
-  if(pipeKey === null){ if(!silent) alert("The pipeline doesn't track \""+mapKey+"\" vendors (OFFStreet uses a separate system), so there's nothing to pull for this show."); return; }
-  if(!pipeKey){ if(!silent) alert("Pick a show first, then pull."); return; }
-  var url = endpoint + (endpoint.indexOf("?")>=0?"&":"?") + "action=profiles&event=" + encodeURIComponent(pipeKey);
+  // Profiles are global — pull every show's vendors, deduped server-side.
+  var url = endpoint + (endpoint.indexOf("?")>=0?"&":"?") + "action=profiles&event=all";
   var data;
   try{
     var res = await fetch(url, { method:"GET", redirect:"follow" });
@@ -4429,6 +4425,7 @@ async function pullFromPipeline(silent){
     if(r.email)        p.email        = r.email;
     if(r.tpt)          p.tpt          = r.tpt;
     if(typeof r.photoCount === "number") p.photoCount = r.photoCount;
+    if(Array.isArray(r.events) && r.events.length) p._pipeEvents = r.events;
     // pipeline-authoritative compliance status
     p.coiStatus = r.coiStatus || "";
     p.mvfStatus = r.mvfStatus || "";
@@ -4460,26 +4457,29 @@ async function enrichProfileFiles(id){
   var p = profiles[id]; if(!p) return;
   if(p._filesLoaded || _enrichInFlight[id]) return;        // cached after first load
   var endpoint = _pfEndpoint(); if(!endpoint || !p.email) return;
-  var bm = window.boothMap; var mapKey = (bm && bm.currentEvent) ? bm.currentEvent : "";
-  var pipeKey = PIPE_EVENT_KEY.hasOwnProperty(mapKey) ? PIPE_EVENT_KEY[mapKey] : mapKey;
-  if(!pipeKey) return;
+  var evs = (p._pipeEvents && p._pipeEvents.length) ? p._pipeEvents : ["territorial","laborday","fall","bluegrass"];
   _enrichInFlight[id] = true;
   try{
-    var url = endpoint + (endpoint.indexOf("?")>=0?"&":"?") + "action=profile&event=" + encodeURIComponent(pipeKey) + "&email=" + encodeURIComponent(p.email);
-    var res = await fetch(url, { method:"GET", redirect:"follow" });
-    if(res.ok){
+    var got = false;
+    for(var i=0;i<evs.length;i++){
+      var url = endpoint + (endpoint.indexOf("?")>=0?"&":"?") + "action=profile&event=" + encodeURIComponent(evs[i]) + "&email=" + encodeURIComponent(p.email);
+      var res = await fetch(url, { method:"GET", redirect:"follow" });
+      if(!res.ok) continue;
       var data = await res.json();
       if(data && data.ok){
         p.photos    = mergeFiles(p.photos,    data.photos,    "photo");
         p.cois      = mergeFiles(p.cois,      data.cois,      "coi");
         p.marketing = mergeFiles(p.marketing, data.marketing, "marketing");
-        p._filesLoaded = true;
-        save();                                              // persists to localStorage
-        if(typeof renderList==="function") renderList();
-        var d=document.getElementById("pf-detail-"+id); if(d) d.classList.add("open");
-        if(typeof updateCount==="function") updateCount();
-        if(typeof paintBadges==="function") paintBadges();
+        got = true;
       }
+    }
+    if(got){
+      p._filesLoaded = true;
+      save();                                                // persists to localStorage
+      if(typeof renderList==="function") renderList();
+      var d=document.getElementById("pf-detail-"+id); if(d) d.classList.add("open");
+      if(typeof updateCount==="function") updateCount();
+      if(typeof paintBadges==="function") paintBadges();
     }
   }catch(e){ console.warn("pf enrich", e); }
   _enrichInFlight[id] = false;
