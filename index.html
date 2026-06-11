@@ -3129,24 +3129,52 @@ _finishTemplateAlign() {
         zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove('drag-over'); const f = e.dataTransfer.files[0]; if (f) { this._handleUploadFile(f); fileInput.files = e.dataTransfer.files; } };
     }
 
-    // Carry the booth SHAPES (elements id="booth-...") from the old map onto a new
-    // map image that has none, so "keep booths" actually keeps them visible. Pure
-    // string->string; no DOM rendering. Returns the new svg unchanged if it already
-    // has booth shapes, or if there is nothing to carry.
-    _mergeBoothShapes(newSvg, oldSvg) {
+    // Booths are identified app-wide by class="booth" (their ids may be bare numbers
+    // like id="1" or id="A5", NOT always "booth-..."). So we MUST match on .booth.
+    _BOOTH_SEL() { return '.booth, [id^="booth-"], [data-booth]'; }
+
+    _countBoothShapes(svg) {
         try {
-            const parser = new DOMParser();
-            const newDoc = parser.parseFromString(newSvg, 'image/svg+xml');
-            const newRoot = newDoc.querySelector('svg');
-            if (!newRoot) return newSvg;
-            if (newDoc.querySelectorAll('[id^="booth-"]').length > 0) return newSvg; // new map already has booths
-            if (!oldSvg) return newSvg;
-            const oldDoc = parser.parseFromString(oldSvg, 'image/svg+xml');
-            const oldBooths = oldDoc.querySelectorAll('[id^="booth-"]');
-            if (!oldBooths.length) return newSvg;
-            oldBooths.forEach(el => newRoot.appendChild(newDoc.importNode(el, true)));
+            const d = new DOMParser().parseFromString(svg, 'image/svg+xml');
+            return d.querySelectorAll(this._BOOTH_SEL()).length;
+        } catch (e) {
+            return (svg.match(/class="[^"]*\bbooth\b/gi) || []).length || (svg.match(/id="booth-/gi) || []).length;
+        }
+    }
+
+    // Build the SVG to save when replacing the map, ALWAYS keeping the booth layer.
+    //  1) New map already has booths -> use it as-is (re-export case).
+    //  2) New map is just a background image -> SWAP that background into the OLD svg,
+    //     keeping every existing .booth element exactly where it is (best, lossless).
+    //  3) Otherwise -> carry the old .booth elements onto the new svg.
+    _buildReplacementSvg(newSvg, oldSvg) {
+        const parse = (s) => { try { return new DOMParser().parseFromString(s, 'image/svg+xml'); } catch (e) { return null; } };
+        const sel = this._BOOTH_SEL();
+        const newDoc = parse(newSvg); if (!newDoc) return newSvg;
+        const newRoot = newDoc.querySelector('svg'); if (!newRoot) return newSvg;
+        if (newDoc.querySelectorAll(sel).length > 0) return newSvg; // (1) re-export already has booths
+
+        const oldDoc = parse(oldSvg);
+        const oldHasBooths = !!(oldDoc && oldDoc.querySelectorAll(sel).length > 0);
+        const getHref = (img) => img ? (img.getAttribute('href') || img.getAttribute('xlink:href') || (img.getAttributeNS ? img.getAttributeNS('http://www.w3.org/1999/xlink','href') : '') || '') : '';
+        const newImg = newDoc.querySelector('image');
+
+        // (2) Swap the background image inside the OLD svg — preserves the booth layer untouched.
+        if (oldHasBooths && newImg) {
+            const oldImg = oldDoc.querySelector('image');
+            const href = getHref(newImg);
+            if (oldImg && href) {
+                oldImg.setAttribute('href', href);
+                try { oldImg.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', href); } catch (_) {}
+                return new XMLSerializer().serializeToString(oldDoc);
+            }
+        }
+        // (3) Carry the old booth elements onto the new svg.
+        if (oldHasBooths) {
+            oldDoc.querySelectorAll(sel).forEach(el => newRoot.appendChild(newDoc.importNode(el, true)));
             return new XMLSerializer().serializeToString(newDoc);
-        } catch (e) { return newSvg; }
+        }
+        return newSvg;
     }
 
     _doReplaceMap(svgContent) {
@@ -3156,11 +3184,14 @@ _finishTemplateAlign() {
         const oldSvg = this._svgGet(ev) || '';
         const boothBackup = (this.eventsData[ev] && this.eventsData[ev].booths)
             ? JSON.parse(JSON.stringify(this.eventsData[ev].booths)) : {};
+        const hadData = Object.keys(boothBackup).length > 0;
         try {
-            // If the new image has no booth shapes, carry the old ones onto it.
-            const finalSvg = this._mergeBoothShapes(svgContent, oldSvg);
+            const finalSvg = this._buildReplacementSvg(svgContent, oldSvg);
+            const shapes = this._countBoothShapes(finalSvg);
+            // HARD STOP: if there is booth data but the result has no visible booths,
+            // do NOT save it — revert to the old map (which has the booths).
+            if (hadData && shapes === 0) throw new Error('new map has no booth shapes to draw the booths on');
             this.saveSvg(ev, finalSvg);
-            // Keep booth DATA on the LIVE object (never a stale reference).
             if (!this.eventsData[ev]) this.eventsData[ev] = { eventId: ev, eventName: ev, booths: {} };
             this.eventsData[ev].booths = boothBackup;
             this.saveEvent(ev);
@@ -3170,9 +3201,7 @@ _finishTemplateAlign() {
             this.applyColors();
             this.updateStats();
             const kept = Object.keys(this.eventsData[ev].booths).length;
-            if (kept === 0 && Object.keys(boothBackup).length > 0) throw new Error('booths did not survive the replace');
-            const shapes = (finalSvg.match(/id="booth-/gi) || []).length;
-            this.notify(`Map replaced — ${kept} booths kept` + (shapes ? '' : ' (warning: no booth shapes on the new map)'));
+            this.notify(`Map replaced — ${kept} booths kept`);
         } catch (e) {
             // SAFETY NET — put the old map + data back so nothing is ever lost.
             if (oldSvg) this.saveSvg(ev, oldSvg);
@@ -3181,7 +3210,7 @@ _finishTemplateAlign() {
             this.loadEvent(ev);
             this.applyColors();
             this.updateStats();
-            this.notify('Replace cancelled — your booths were kept on the current map. (' + e.message + ')', 'error');
+            this.notify('Replace cancelled — your booths were KEPT on the current map. (' + e.message + ')', 'error');
         }
     }
     _showUploadDlg() {
