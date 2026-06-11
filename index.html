@@ -3116,23 +3116,60 @@ _finishTemplateAlign() {
         zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove('drag-over'); const f = e.dataTransfer.files[0]; if (f) { this._handleUploadFile(f); fileInput.files = e.dataTransfer.files; } };
     }
 
+    // Carry the booth SHAPES (elements id="booth-...") from the old map onto a new
+    // map image that has none, so "keep booths" actually keeps them visible. Pure
+    // string->string; no DOM rendering. Returns the new svg unchanged if it already
+    // has booth shapes, or if there is nothing to carry.
+    _mergeBoothShapes(newSvg, oldSvg) {
+        try {
+            const parser = new DOMParser();
+            const newDoc = parser.parseFromString(newSvg, 'image/svg+xml');
+            const newRoot = newDoc.querySelector('svg');
+            if (!newRoot) return newSvg;
+            if (newDoc.querySelectorAll('[id^="booth-"]').length > 0) return newSvg; // new map already has booths
+            if (!oldSvg) return newSvg;
+            const oldDoc = parser.parseFromString(oldSvg, 'image/svg+xml');
+            const oldBooths = oldDoc.querySelectorAll('[id^="booth-"]');
+            if (!oldBooths.length) return newSvg;
+            oldBooths.forEach(el => newRoot.appendChild(newDoc.importNode(el, true)));
+            return new XMLSerializer().serializeToString(newDoc);
+        } catch (e) { return newSvg; }
+    }
+
     _doReplaceMap(svgContent) {
-        // Snapshot current booth data BEFORE replacing the SVG
-        const data = this.eventsData[this.currentEvent];
-        const boothBackup = data?.booths ? JSON.parse(JSON.stringify(data.booths)) : {};
-        // Save the new SVG into localStorage for this event
-        this.saveSvg(this.currentEvent, svgContent);
-        // Reload the event — this will use the new SVG but keep booth data intact
-        this.loadEvent(this.currentEvent);
-        // Restore booth data (in case loadEvent overwrote it — defensive)
-        if (data) {
-            data.booths = boothBackup;
-            this.saveEvent(this.currentEvent);
+        const ev = this.currentEvent;
+        // Snapshot EVERYTHING for this show first — a bad replace can never lose data.
+        const dataSnapshot = JSON.parse(JSON.stringify(this.eventsData[ev] || { eventId: ev, eventName: ev, booths: {} }));
+        const oldSvg = this._svgGet(ev) || '';
+        const boothBackup = (this.eventsData[ev] && this.eventsData[ev].booths)
+            ? JSON.parse(JSON.stringify(this.eventsData[ev].booths)) : {};
+        try {
+            // If the new image has no booth shapes, carry the old ones onto it.
+            const finalSvg = this._mergeBoothShapes(svgContent, oldSvg);
+            this.saveSvg(ev, finalSvg);
+            // Keep booth DATA on the LIVE object (never a stale reference).
+            if (!this.eventsData[ev]) this.eventsData[ev] = { eventId: ev, eventName: ev, booths: {} };
+            this.eventsData[ev].booths = boothBackup;
+            this.saveEvent(ev);
+            this.loadEvent(ev);
+            this.eventsData[ev].booths = boothBackup;   // re-assert in case render touched it
+            this.saveEvent(ev);
             this.applyColors();
             this.updateStats();
+            const kept = Object.keys(this.eventsData[ev].booths).length;
+            if (kept === 0 && Object.keys(boothBackup).length > 0) throw new Error('booths did not survive the replace');
+            const shapes = (finalSvg.match(/id="booth-/gi) || []).length;
+            this.notify(`Map replaced — ${kept} booths kept` + (shapes ? '' : ' (warning: no booth shapes on the new map)'));
+        } catch (e) {
+            // SAFETY NET — put the old map + data back so nothing is ever lost.
+            if (oldSvg) this.saveSvg(ev, oldSvg);
+            this.eventsData[ev] = dataSnapshot;
+            this.saveEvent(ev);
+            this.loadEvent(ev);
+            this.applyColors();
+            this.updateStats();
+            this.notify('Replace cancelled — your booths were kept on the current map. (' + e.message + ')', 'error');
         }
-        const count = Object.keys(boothBackup).length;
-        this.notify(`Map replaced — ${count} booth${count === 1 ? '' : 's'} preserved`);
     }
     _showUploadDlg() {
         const m = document.getElementById('upload-map-modal');
