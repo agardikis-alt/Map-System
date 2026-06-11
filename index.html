@@ -864,7 +864,7 @@ body {
             <div class="modal-header"><h3>Edit Booth</h3><button id="close-modal" class="btn-close">&times;</button></div>
             <div class="modal-body">
                 <input type="hidden" id="edit-booth-id">
-                <div class="form-group" id="edit-apply-profile-group"><label>Apply Vendor Profile</label><select id="edit-apply-profile"><option value="">- fill from a saved profile -</option></select><div id="edit-pref-space" style="font-size:12px;color:var(--text-mid);margin-top:4px;display:none;font-weight:600;"></div></div>
+                <div class="form-group" id="edit-apply-profile-group" style="position:relative;"><label>Apply Vendor Profile</label><input type="text" id="edit-apply-search" placeholder="Search saved profiles by name, business, category…" autocomplete="off" style="width:100%;"><div id="edit-apply-results" style="display:none;max-height:240px;overflow:auto;border:1px solid var(--border,#ddd);border-radius:6px;margin-top:2px;background:var(--card,#fff);"></div><div id="edit-pref-space" style="font-size:12px;color:var(--text-mid);margin-top:4px;display:none;font-weight:600;"></div></div>
                 <div class="form-group"><label>Map Label</label><input type="text" id="edit-map-label" placeholder="e.g. 12 or A-4"></div>
                 <div class="form-group"><label>Booth Size</label><input type="text" id="edit-booth-size" placeholder="e.g. 10x10"></div>
                 <div class="form-group"><label>Vendor Name</label><input type="text" id="edit-vendor-name" placeholder="Enter vendor name"></div>
@@ -1140,14 +1140,27 @@ class BoothMapSystem {
         this.notify('Filled from profile \u2014 review and Save');
     }
     _populateApplyProfile(){
-        const aps=document.getElementById('edit-apply-profile'); const ps=document.getElementById('edit-pref-space');
+        const inp=document.getElementById('edit-apply-search');
+        const res=document.getElementById('edit-apply-results');
+        const ps=document.getElementById('edit-pref-space');
         if(ps){ ps.style.display='none'; ps.textContent=''; }
-        if(!aps) return;
-        aps.innerHTML='<option value="">- fill from a saved profile -</option>';
-        const PF=window.PFProfiles;
-        if(PF&&PF.list){ PF.list().forEach(pr=>{ const o=document.createElement('option'); o.value=pr.id; o.textContent=pr.label; aps.appendChild(o); }); }
-        aps.value='';
-        aps.onchange=()=>this.applyProfileToEdit(aps.value);
+        if(!inp||!res) return;
+        const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+        inp.value=''; res.innerHTML=''; res.style.display='none';
+        const render=(q)=>{
+            const PF=window.PFProfiles;
+            const items=(PF&&PF.search)?PF.search(q):((PF&&PF.list)?PF.list():[]);
+            if(!items.length){ res.innerHTML='<div style="padding:8px 10px;color:var(--text-mid);font-size:13px;">No matching profiles</div>'; res.style.display='block'; return; }
+            res.innerHTML=items.slice(0,80).map(it=>'<div class="apply-prof-row" data-id="'+esc(it.id)+'" style="padding:8px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border,#eee);">'+esc(it.label)+'</div>').join('')+(items.length>80?'<div style="padding:6px 10px;color:var(--text-mid);font-size:12px;">'+(items.length-80)+' more… keep typing to narrow</div>':'');
+            res.style.display='block';
+        };
+        inp.oninput=()=>render(inp.value);
+        inp.onfocus=()=>render(inp.value);
+        res.onclick=(e)=>{ const row=e.target.closest? e.target.closest('.apply-prof-row') : null; if(!row) return; const id=row.getAttribute('data-id'); const PF=window.PFProfiles; const g=(PF&&PF.get)?PF.get(id):null; inp.value=g?(g.businessName||g.vendorName||'Unnamed'):''; res.style.display='none'; this.applyProfileToEdit(id); };
+        if(!this._applyOutsideBound){
+            document.addEventListener('click',(e)=>{ const grp=document.getElementById('edit-apply-profile-group'); const r=document.getElementById('edit-apply-results'); if(r && grp && !grp.contains(e.target)) r.style.display='none'; });
+            this._applyOutsideBound=true;
+        }
     }
     _toggleMultiSelect(){
         const svg=document.querySelector('#map-content svg'); if(!svg){ this.notify('No map loaded','error'); return; }
@@ -4540,7 +4553,18 @@ window.PFProfiles = {
   list: function(){ return Object.keys(profiles).map(function(id){ var p=profiles[id]; return {
       id:id,
       label:(p.businessName||p.vendorName||"Unnamed")+(p.category?" \u2014 "+p.category:"")+(p.preferredBoothSpace?"  [pref "+p.preferredBoothSpace+"]":"")
-    }; }).sort(function(a,b){ return (a.label||"").localeCompare(b.label||""); }); }
+    }; }).sort(function(a,b){ return (a.label||"").localeCompare(b.label||""); }); },
+  search: function(q){
+    q = String(q==null?"":q).trim().toLowerCase();
+    var arr = Object.keys(profiles).map(function(id){ var p=profiles[id]; return {
+      id:id,
+      label:(p.businessName||p.vendorName||"Unnamed")+(p.category?" \u2014 "+p.category:"")+(p.preferredBoothSpace?"  [pref "+p.preferredBoothSpace+"]":""),
+      hay:((p.businessName||"")+" "+(p.vendorName||"")+" "+(p.category||"")+" "+(p.email||"")+" "+(p.preferredBoothSpace||"")).toLowerCase()
+    }; });
+    if(q){ var toks=q.split(/\s+/).filter(Boolean); arr = arr.filter(function(x){ return toks.every(function(tk){ return x.hay.indexOf(tk)>=0; }); }); }
+    arr.sort(function(a,b){ return (a.label||"").localeCompare(b.label||""); });
+    return arr.map(function(x){ return {id:x.id, label:x.label}; });
+  }
 };
 
 function start(){
