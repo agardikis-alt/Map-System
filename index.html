@@ -1792,7 +1792,7 @@ _finishTemplateAlign() {
     showDetails(b){
         const p=document.getElementById('detail-content');
         const cat=this.categories[b.vendorCategory]||this.categories['Open'];
-        p.innerHTML=`<div class="detail-field"><label>Booth</label><div class="value" style="font-size:22px;font-weight:700;color:var(--primary);">${b.mapLabel||b.boothId}</div></div><div class="detail-field"><label>Status</label><div class="value"><span class="booth-status-badge status-${b.boothStatus}">${b.boothStatus==='unavailable'?(b.unavailableType||'Unavailable'):b.boothStatus}</span></div></div>${(()=>{const _st=this._vendorStatus(b);return _st?`<div class="detail-field"><label>Vendor file</label><div class="value"><span style="display:inline-block;padding:3px 10px;border-radius:12px;font-weight:700;font-size:12px;${_st.complete?'background:rgba(127,201,135,.18);color:#2e7d32;':'background:rgba(240,128,128,.18);color:#b3261e;'}">${_st.complete?'✓ Complete':'✕ Incomplete'}</span></div></div>`:'';})()}<div class="detail-field"><label>Category</label><div class="value"><span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:${cat.bgColor};border:2px solid ${cat.borderColor};border-radius:3px;"></span>${b.vendorCategory}</span></div></div><div class="detail-field"><label>Vendor</label><div class="value ${!b.vendorName?'empty':''}">${b.vendorName||'Not assigned'}</div></div><div class="detail-field"><label>Business</label><div class="value ${!b.businessName?'empty':''}">${b.businessName||'Not assigned'}</div></div><div class="detail-field"><label>Size</label><div class="value">${b.boothSize||'10x10'}</div></div>${b.phone?`<div class="detail-field"><label>Phone</label><div class="value">${b.phone}</div></div>`:''}${b.email?`<div class="detail-field"><label>Email</label><div class="value">${b.email}</div></div>`:''}${b.notes?`<div class="detail-field"><label>Notes</label><div class="value">${b.notes}</div></div>`:''}<div class="button-group" style="margin-top:16px;"><button class="btn btn-primary" onclick="boothMap.openEditModal(boothMap.eventsData['${this.currentEvent}'].booths['${b.boothId}'])">Edit</button>${b.boothStatus==='assigned'?`<button class="btn btn-secondary" onclick="boothMap.openMoveModal('${b.boothId}')">Move</button>`:''}</div>`;
+        p.innerHTML=`<div class="detail-field"><label>Booth</label><div class="value" style="font-size:22px;font-weight:700;color:var(--primary);">${b.mapLabel||b.boothId}</div></div><div class="detail-field"><label>Status</label><div class="value"><span class="booth-status-badge status-${b.boothStatus}">${b.boothStatus==='unavailable'?(b.unavailableType||'Unavailable'):b.boothStatus}</span></div></div>${(()=>{const _st=this._vendorStatus(b);return _st?`<div class="detail-field"><label>Vendor file</label><div class="value"><span style="display:inline-block;padding:3px 10px;border-radius:12px;font-weight:700;font-size:12px;${_st.complete?'background:rgba(127,201,135,.18);color:#2e7d32;':'background:rgba(240,128,128,.18);color:#b3261e;'}">${_st.complete?'✓ Complete':'✕ Incomplete'}</span></div></div>`:'';})()}<div class="detail-field"><label>Category</label><div class="value"><span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:${cat.bgColor};border:2px solid ${cat.borderColor};border-radius:3px;"></span>${b.vendorCategory}</span></div></div><div class="detail-field"><label>Vendor</label><div class="value ${!b.vendorName?'empty':''}">${b.vendorName||'Not assigned'}</div></div><div class="detail-field"><label>Business</label><div class="value ${!b.businessName?'empty':''}">${b.businessName||'Not assigned'}</div></div><div class="detail-field"><label>Size</label><div class="value">${b.boothSize||'10x10'}</div></div>${b.phone?`<div class="detail-field"><label>Phone</label><div class="value">${b.phone}</div></div>`:''}${b.email?`<div class="detail-field"><label>Email</label><div class="value">${b.email}</div></div>`:''}${b.notes?`<div class="detail-field"><label>Notes</label><div class="value">${b.notes}</div></div>`:''}<div class="button-group" style="margin-top:16px;"><button class="btn btn-primary" onclick="boothMap.openEditModal(boothMap.eventsData['${this.currentEvent}'].booths['${b.boothId}'])">Edit</button>${b.boothStatus==='assigned'?`<button class="btn btn-secondary" onclick="boothMap.openMoveModal('${b.boothId}')">Move</button>`:''}${(b.vendorName||b.businessName||b.email)?`<button class="btn btn-secondary" onclick="boothMap.openVendorProfile(boothMap.eventsData['${this.currentEvent}'].booths['${b.boothId}'])">View Vendor Profile</button>`:''}</div>`;
     }
 
     _vendorStatus(b){
@@ -1803,6 +1803,10 @@ _finishTemplateAlign() {
         if(!PF || !PF.statusFor) return null;
         const st=PF.statusFor(b.email, b.businessName, b.vendorName);
         return (st && st.found) ? st : null;
+    }
+    openVendorProfile(b){
+        if(window.PFProfiles && window.PFProfiles.openFor){ window.PFProfiles.openFor(b.email, b.businessName, b.vendorName); }
+        else { this.notify('Profiles not ready yet','error'); }
     }
     showTooltip(e,bid){
         const d=this.eventsData[this.currentEvent], b=d?.booths?.[bid], tt=document.getElementById('tooltip');
@@ -4090,6 +4094,8 @@ ensureUI();console.log('[Batch 3] Chain mode loaded.');
 var LS_KEY = "pf_profiles_v1";
 var profiles = {};       // id -> profile record
 var editingId = null;
+var _pfEditing = false;
+function _safeRenderList(){ if(!_pfEditing && typeof renderList==='function') renderList(); }
 
 /* ---------------- storage ---------------- */
 function load(){
@@ -4241,7 +4247,7 @@ function hook(){
     bm.__pfWrapped = true;
   }
   var sel = document.getElementById("event-select");
-  if(sel && !sel.__pfBound){ sel.addEventListener("change", function(){ setTimeout(paintBadges,150); if(_pfEndpoint()) setTimeout(function(){ pullFromPipeline(true).then(function(){ renderList(); updateCount(); paintBadges(); }).catch(function(){}); }, 200); }); sel.__pfBound = true; }
+  if(sel && !sel.__pfBound){ sel.addEventListener("change", function(){ setTimeout(paintBadges,150); if(_pfEndpoint()) setTimeout(function(){ pullFromPipeline(true).then(function(){ _safeRenderList(); updateCount(); paintBadges(); }).catch(function(){}); }, 200); }); sel.__pfBound = true; }
   setTimeout(paintBadges,200);
   return true;
 }
@@ -4280,7 +4286,7 @@ function buildOverlay(){
     +     '<button class="pf-btn" id="pf-import">Import</button>'
     +     '<button class="pf-btn" id="pf-drive">Drive Settings</button>'
     +     '<button class="pf-btn green" id="pf-sync">Sync \u2194 Drive</button>'
-    +     '<button class="pf-btn" id="pf-pull">Pull from JotForm</button>'
+    +     '<button class="pf-btn" id="pf-pull" title="Refresh every profile + their COIs/photos from Drive">\u2b07 Pull from Drive</button>'
     +     '<input type="file" id="pf-import-file" accept="application/json" style="display:none">'
     +   '</div>'
     +   '<div id="pf-list"></div>'
@@ -4296,11 +4302,11 @@ function buildOverlay(){
   document.getElementById("pf-import-file").addEventListener("change", importJson);
   var _ds=document.getElementById("pf-drive"); if(_ds) _ds.addEventListener("click", setDriveUrl);
   var _sy=document.getElementById("pf-sync"); if(_sy) _sy.addEventListener("click", syncDrive);
-  var _pl=document.getElementById("pf-pull"); if(_pl) _pl.addEventListener("click", function(){ pullFromPipeline(false); });
+  var _pl=document.getElementById("pf-pull"); if(_pl) _pl.addEventListener("click", function(){ pullEverythingFromDrive(); });
 }
 function openOverlay(){ buildOverlay(); renderList(); document.getElementById("pf-overlay").classList.add("pf-open");
-  if(_pfEndpoint()){ pullFromPipeline(true).then(function(){ renderList(); updateCount(); paintBadges(); }).catch(function(){}); } }
-function closeOverlay(){ var ov = document.getElementById("pf-overlay"); if(ov) ov.classList.remove("pf-open"); paintBadges(); updateCount(); }
+  if(_pfEndpoint()){ pullFromPipeline(true).then(function(){ _safeRenderList(); updateCount(); paintBadges(); }).catch(function(){}); } }
+function closeOverlay(){ _pfEditing=false; var ov = document.getElementById("pf-overlay"); if(ov) ov.classList.remove("pf-open"); paintBadges(); updateCount(); }
 
 /* ---------------- list + cards ---------------- */
 function renderList(){
@@ -4347,6 +4353,7 @@ function cardHtml(id){
   +     '<button class="pf-btn" data-act="see" data-id="' + id + '">See Profile</button>'
   +     '<button class="pf-btn" data-act="edit" data-id="' + id + '">Edit</button>'
   +     '<button class="pf-btn" data-act="togglecomplete" data-id="' + id + '">' + (p.manualComplete ? "✓ Marked (undo)" : "Mark complete") + '</button>'
+  +     '<button class="pf-btn" data-act="refreshfiles" data-id="' + id + '" title="Re-pull this vendor\'s COIs & photos from Drive">\u21bb Files</button>'
   +     '<button class="pf-btn" data-act="del" data-id="' + id + '">Delete</button>'
   +   '</div>'
   +   '<div class="pf-detail" id="pf-detail-' + id + '">' + detailHtml(p) + '</div>'
@@ -4373,6 +4380,7 @@ function bindCard(id){
       if(act === "see"){ var d = document.getElementById("pf-detail-" + id); if(d) d.classList.toggle("open"); if(d && d.classList.contains("open")) enrichProfileFiles(id); }
       else if(act === "edit"){ editingId = id; showForm(profiles[id]); }
       else if(act === "togglecomplete"){ var pp=profiles[id]; if(pp){ pp.manualComplete = !pp.manualComplete; save(); renderList(); updateCount(); paintBadges(); if(window.boothMap && window.boothMap.updateStats) try{ window.boothMap.updateStats(); }catch(_){} } }
+      else if(act === "refreshfiles"){ var pr=profiles[id]; if(pr){ pr._filesLoaded=false; var dd=document.getElementById("pf-detail-"+id); if(dd) dd.classList.add("open"); enrichProfileFiles(id); } }
       else if(act === "del"){ if(confirm("Delete this profile?")){ delete profiles[id]; save(); renderList(); updateCount(); paintBadges(); } }
     });
   });
@@ -4380,6 +4388,7 @@ function bindCard(id){
 
 /* ---------------- add / edit form ---------------- */
 function showForm(p){
+  _pfEditing = true;
   buildOverlay();
   var list = document.getElementById("pf-list"); if(!list) return;
   p = p || {};
@@ -4431,8 +4440,7 @@ function showForm(p){
   +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-coion" ' + (p.coiOnFile ? "checked" : "") + '> COI on file</label></div>'
   +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-annual" ' + (p.coiAnnual ? "checked" : "") + '> COI is annual / year-round (no expiry)</label></div>'
   +   '<div class="pf-field"><label>COI expiration date</label><input type="date" id="pf-f-exp" value="' + esc(p.coiExpiry || "") + '"><div class="pf-mini">Shows green until this date passes. Ignored if "annual" is checked.</div></div>'
-  +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-mktg" ' + (p.marketingVerified ? "checked" : "") + '> Marketing verification complete</label></div>'
-  +   '<div class="pf-field" style="background:rgba(127,201,135,.12);border:1px solid rgba(127,201,135,.4);border-radius:6px;padding:8px 10px;"><label class="pf-inline"><input type="checkbox" id="pf-f-complete" ' + (p.manualComplete ? "checked" : "") + '> <strong>Mark this vendor COMPLETE</strong></label><div class="pf-mini">Forces a green ✓ and stays complete even after a JotForm pull.</div></div>'
+  +   '<div class="pf-field" style="background:rgba(127,201,135,.14);border:1px solid rgba(127,201,135,.45);border-radius:6px;padding:10px 12px;"><label class="pf-inline" style="font-size:14px;"><input type="checkbox" id="pf-f-complete" ' + (p.manualComplete ? "checked" : "") + '> <strong>Mark vendor as Complete</strong></label><div class="pf-mini">Saves a green ✓ on this vendor when you hit Save. Stays complete even after a Drive / JotForm pull.</div></div>'
   +   '<div class="pf-field"><label>Photos</label><div id="pf-photo-list" class="pf-photos"></div><input type="file" id="pf-photo-up" accept="image/*" multiple style="margin-top:6px;font-size:12px;"><div class="pf-mini">Upload from device (\u2192 Drive), or paste URLs below.</div><textarea id="pf-f-photos" placeholder="Paste photo / Drive / JotForm URLs, one per line"></textarea></div>'
   +   '<div class="pf-field"><label>COI file(s)</label><div id="pf-coi-list"></div><input type="file" id="pf-coi-up" accept="application/pdf,image/*" multiple style="margin-top:6px;font-size:12px;"><div class="pf-mini">Upload COI (PDF/image \u2192 Drive), or paste a COI URL below.</div><textarea id="pf-f-cois" placeholder="Paste COI URLs, one per line"></textarea></div>'
   +   '<div class="pf-field"><label>Notes</label><textarea id="pf-f-notes">' + esc(p.notes || "") + '</textarea></div>'
@@ -4452,7 +4460,7 @@ function showForm(p){
     var _ph=document.getElementById("pf-f-phone"); if(_ph) _ph.value = v.phone || "";
     var _em=document.getElementById("pf-f-email"); if(_em) _em.value = v.email || "";
   });
-  document.getElementById("pf-cancel").addEventListener("click", renderList);
+  document.getElementById("pf-cancel").addEventListener("click", function(){ _pfEditing=false; renderList(); });
   document.getElementById("pf-save").addEventListener("click", function(){
     var biz = document.getElementById("pf-f-biz").value.trim();
     var ven = document.getElementById("pf-f-vendor").value.trim();
@@ -4473,7 +4481,7 @@ function showForm(p){
       coiOnFile: document.getElementById("pf-f-coion").checked,
       coiAnnual: document.getElementById("pf-f-annual").checked,
       coiExpiry: document.getElementById("pf-f-exp").value || "",
-      marketingVerified: document.getElementById("pf-f-mktg").checked,
+      marketingVerified: !!(editingId && profiles[editingId] && profiles[editingId].marketingVerified),
       manualComplete: !!((document.getElementById("pf-f-complete")||{}).checked),
       photos: photos,
       cois: cois,
@@ -4481,7 +4489,7 @@ function showForm(p){
     };
     var id = editingId || uid();
     profiles[id] = Object.assign(profiles[id] || {}, rec);
-    save(); editingId = null; renderList(); updateCount(); paintBadges();
+    save(); editingId = null; _pfEditing=false; renderList(); updateCount(); paintBadges();
   });
 }
 
@@ -4557,9 +4565,21 @@ async function pullFromPipeline(silent){
     p.photos = normFiles(p.photos,"photo"); p.cois = normFiles(p.cois,"coi");
     if(isNew) created++; else updated++;
   });
-  save(); if(typeof renderList==="function") renderList(); if(typeof updateCount==="function") updateCount(); if(typeof paintBadges==="function") paintBadges();
+  save(); _safeRenderList(); if(typeof updateCount==="function") updateCount(); if(typeof paintBadges==="function") paintBadges();
   if(!silent) alert("Pulled "+rows.length+" vendor(s) from JotForm: "+created+" new, "+updated+" updated.");
   return { created:created, updated:updated, total:rows.length };
+}
+
+/* ---- pull EVERYTHING from Drive: profile statuses + reset file caches so COIs/photos re-pull ---- */
+async function pullEverythingFromDrive(){
+  var r = await pullFromPipeline(false);     // refresh identity + COI/MVF status for every vendor
+  // allow files (insurances/photos/marketing) to be re-fetched from Drive on next open
+  Object.keys(profiles).forEach(function(k){ profiles[k]._filesLoaded = false; });
+  save();
+  // eagerly refresh files for any profile whose detail is currently open
+  var open = document.querySelectorAll(".pf-detail.open");
+  for(var i=0;i<open.length;i++){ var idAttr=(open[i].id||"").replace("pf-detail-",""); if(idAttr) enrichProfileFiles(idAttr); }
+  return r;
 }
 
 /* ---- load ONE vendor's Drive files on demand, then cache locally ---- */
@@ -4616,6 +4636,22 @@ window.PFProfiles = {
       id:id,
       label:(p.businessName||p.vendorName||"Unnamed")+(p.category?" \u2014 "+p.category:"")+(p.preferredBoothSpace?"  [pref "+p.preferredBoothSpace+"]":"")
     }; }).sort(function(a,b){ return (a.label||"").localeCompare(b.label||""); }); },
+  openFor: function(email, business, vendor){
+    var id = findProfileByEmailOrBiz(email||"", business||"");
+    if(!id && vendor){ var key=String(vendor).trim().toLowerCase(); id = Object.keys(profiles).find(function(k){ return String(profiles[k].vendorName||"").trim().toLowerCase()===key; }) || null; }
+    openOverlay();
+    if(!id){ setTimeout(function(){ alert("No saved profile yet for this vendor. Use + New Profile to add one."); }, 60); return false; }
+    setTimeout(function(){
+      var card = document.querySelector('.pf-card[data-id="'+id+'"]');
+      if(card){
+        card.scrollIntoView({ behavior:"smooth", block:"center" });
+        var d = document.getElementById("pf-detail-"+id); if(d){ d.classList.add("open"); enrichProfileFiles(id); }
+        card.style.outline = "3px solid #7fc987"; card.style.borderRadius="8px";
+        setTimeout(function(){ card.style.outline=""; }, 2200);
+      }
+    }, 220);
+    return true;
+  },
   statusFor: function(email, business, vendor){
     var id = findProfileByEmailOrBiz(email||"", business||"");
     if(!id && vendor){ var key=String(vendor).trim().toLowerCase(); id = Object.keys(profiles).find(function(k){ return String(profiles[k].vendorName||"").trim().toLowerCase()===key; }) || null; }
