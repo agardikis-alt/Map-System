@@ -788,6 +788,10 @@ body {
                     <div class="stat-card"><div class="stat-value accent" id="stat-open">0</div><div class="stat-label">Available</div></div>
                     <div class="stat-card"><div class="stat-value danger" id="stat-unavailable">0</div><div class="stat-label">Unavailable</div></div>
                 </div>
+                <div class="stats-grid" style="margin-top:8px;">
+                    <div class="stat-card"><div class="stat-value success" id="stat-vcomplete">0</div><div class="stat-label">Vendors Complete</div></div>
+                    <div class="stat-card"><div class="stat-value danger" id="stat-vincomplete">0</div><div class="stat-label">Vendors Incomplete</div></div>
+                </div>
             </div>
 
             <div class="sidebar-section">
@@ -1788,13 +1792,22 @@ _finishTemplateAlign() {
     showDetails(b){
         const p=document.getElementById('detail-content');
         const cat=this.categories[b.vendorCategory]||this.categories['Open'];
-        p.innerHTML=`<div class="detail-field"><label>Booth</label><div class="value" style="font-size:22px;font-weight:700;color:var(--primary);">${b.mapLabel||b.boothId}</div></div><div class="detail-field"><label>Status</label><div class="value"><span class="booth-status-badge status-${b.boothStatus}">${b.boothStatus==='unavailable'?(b.unavailableType||'Unavailable'):b.boothStatus}</span></div></div><div class="detail-field"><label>Category</label><div class="value"><span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:${cat.bgColor};border:2px solid ${cat.borderColor};border-radius:3px;"></span>${b.vendorCategory}</span></div></div><div class="detail-field"><label>Vendor</label><div class="value ${!b.vendorName?'empty':''}">${b.vendorName||'Not assigned'}</div></div><div class="detail-field"><label>Business</label><div class="value ${!b.businessName?'empty':''}">${b.businessName||'Not assigned'}</div></div><div class="detail-field"><label>Size</label><div class="value">${b.boothSize||'10x10'}</div></div>${b.phone?`<div class="detail-field"><label>Phone</label><div class="value">${b.phone}</div></div>`:''}${b.email?`<div class="detail-field"><label>Email</label><div class="value">${b.email}</div></div>`:''}${b.notes?`<div class="detail-field"><label>Notes</label><div class="value">${b.notes}</div></div>`:''}<div class="button-group" style="margin-top:16px;"><button class="btn btn-primary" onclick="boothMap.openEditModal(boothMap.eventsData['${this.currentEvent}'].booths['${b.boothId}'])">Edit</button>${b.boothStatus==='assigned'?`<button class="btn btn-secondary" onclick="boothMap.openMoveModal('${b.boothId}')">Move</button>`:''}</div>`;
+        p.innerHTML=`<div class="detail-field"><label>Booth</label><div class="value" style="font-size:22px;font-weight:700;color:var(--primary);">${b.mapLabel||b.boothId}</div></div><div class="detail-field"><label>Status</label><div class="value"><span class="booth-status-badge status-${b.boothStatus}">${b.boothStatus==='unavailable'?(b.unavailableType||'Unavailable'):b.boothStatus}</span></div></div>${(()=>{const _st=this._vendorStatus(b);return _st?`<div class="detail-field"><label>Vendor file</label><div class="value"><span style="display:inline-block;padding:3px 10px;border-radius:12px;font-weight:700;font-size:12px;${_st.complete?'background:rgba(127,201,135,.18);color:#2e7d32;':'background:rgba(240,128,128,.18);color:#b3261e;'}">${_st.complete?'✓ Complete':'✕ Incomplete'}</span></div></div>`:'';})()}<div class="detail-field"><label>Category</label><div class="value"><span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:${cat.bgColor};border:2px solid ${cat.borderColor};border-radius:3px;"></span>${b.vendorCategory}</span></div></div><div class="detail-field"><label>Vendor</label><div class="value ${!b.vendorName?'empty':''}">${b.vendorName||'Not assigned'}</div></div><div class="detail-field"><label>Business</label><div class="value ${!b.businessName?'empty':''}">${b.businessName||'Not assigned'}</div></div><div class="detail-field"><label>Size</label><div class="value">${b.boothSize||'10x10'}</div></div>${b.phone?`<div class="detail-field"><label>Phone</label><div class="value">${b.phone}</div></div>`:''}${b.email?`<div class="detail-field"><label>Email</label><div class="value">${b.email}</div></div>`:''}${b.notes?`<div class="detail-field"><label>Notes</label><div class="value">${b.notes}</div></div>`:''}<div class="button-group" style="margin-top:16px;"><button class="btn btn-primary" onclick="boothMap.openEditModal(boothMap.eventsData['${this.currentEvent}'].booths['${b.boothId}'])">Edit</button>${b.boothStatus==='assigned'?`<button class="btn btn-secondary" onclick="boothMap.openMoveModal('${b.boothId}')">Move</button>`:''}</div>`;
     }
 
+    _vendorStatus(b){
+        // Map a booth to its saved vendor profile to read completeness. Only meaningful
+        // when the booth actually has a vendor on it.
+        if(!b || (!b.vendorName && !b.businessName && !b.email)) return null;
+        const PF=window.PFProfiles;
+        if(!PF || !PF.statusFor) return null;
+        const st=PF.statusFor(b.email, b.businessName, b.vendorName);
+        return (st && st.found) ? st : null;
+    }
     showTooltip(e,bid){
         const d=this.eventsData[this.currentEvent], b=d?.booths?.[bid], tt=document.getElementById('tooltip');
         if(!b) tt.innerHTML=`<div class="tooltip-title">Booth ${bid}</div><div class="tooltip-info">No data</div>`;
-        else tt.innerHTML=`<div class="tooltip-title">Booth ${b.mapLabel||bid}</div><div class="tooltip-info">${b.vendorName?`<strong>${b.vendorName}</strong><br>`:''}${b.businessName?`${b.businessName}<br>`:''}${b.vendorCategory} • ${b.boothStatus}</div>`;
+        else { const _st=this._vendorStatus(b); const _badge=_st? (_st.complete?'<br><span style="color:#7fc987;font-weight:700;">✓ Complete</span>':'<br><span style="color:#f08080;font-weight:700;">✕ Incomplete</span>'):''; tt.innerHTML=`<div class="tooltip-title">Booth ${b.mapLabel||bid}</div><div class="tooltip-info">${b.vendorName?`<strong>${b.vendorName}</strong><br>`:''}${b.businessName?`${b.businessName}<br>`:''}${b.vendorCategory} • ${b.boothStatus}${_badge}</div>`; }
         tt.classList.add('active'); this.moveTooltip(e);
     }
     moveTooltip(e){const t=document.getElementById('tooltip'),r=t.getBoundingClientRect();let x=e.clientX+12,y=e.clientY+12;x=Math.min(x,window.innerWidth-r.width-8);y=Math.min(y,window.innerHeight-r.height-8);t.style.left=x+'px';t.style.top=y+'px';}
@@ -1989,6 +2002,19 @@ _finishTemplateAlign() {
         document.getElementById('stat-assigned').textContent = assigned;
         document.getElementById('stat-open').textContent = open;
         document.getElementById('stat-unavailable').textContent = unavailable;
+        // Vendor completeness for the assigned booths in THIS show
+        let vComplete = 0, vIncomplete = 0;
+        const PF = window.PFProfiles;
+        if (PF && PF.statusFor) {
+            dataBooths.forEach(x => {
+                if (domIds.has(x.boothId) && x.boothStatus === 'assigned') {
+                    const st = PF.statusFor(x.email, x.businessName, x.vendorName);
+                    if (st && st.found && st.complete) vComplete++; else vIncomplete++;
+                }
+            });
+        }
+        const _vc = document.getElementById('stat-vcomplete'); if (_vc) _vc.textContent = vComplete;
+        const _vi = document.getElementById('stat-vincomplete'); if (_vi) _vi.textContent = vIncomplete;
     }
 
     // ===== EDIT MODAL =====
@@ -4122,6 +4148,7 @@ function coiValid(p){
 }
 function pfHasPhotos(p){ return (Array.isArray(p.photos) && p.photos.length > 0) || (Number(p.photoCount) > 0); }
 function isComplete(p){
+  if(p && p.manualComplete) return true;            // manual override — set by you, never cleared by a pull
   return coiValid(p) && !!p.marketingVerified && pfHasPhotos(p);
 }
 function coiText(p){
@@ -4297,13 +4324,15 @@ function photoImgSrc(e){
   if(e && e.driveId) return "https://drive.google.com/thumbnail?id=" + encodeURIComponent(e.driveId) + "&sz=w1600";
   return fileUrl(e);
 }
+function driveDownloadUrl(e){ return (e && e.driveId) ? ("https://drive.google.com/uc?export=download&id="+encodeURIComponent(e.driveId)) : fileUrl(e); }
+function driveViewUrl(e){ return (e && e.driveId) ? ("https://drive.google.com/file/d/"+encodeURIComponent(e.driveId)+"/view") : fileUrl(e); }
 function photosHtml(p){
-  var ph = (p.photos||[]).map(function(e){ var view=esc(fileUrl(e)); var img=esc(photoImgSrc(e)); if(!img && !view) return ""; var href=view||img; return '<a href="'+href+'" target="_blank" rel="noopener"><img src="'+img+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"></a>'; }).filter(Boolean).join("");
+  var ph = (p.photos||[]).map(function(e){ var img=esc(photoImgSrc(e)); var open=esc(driveViewUrl(e)); var dl=esc(driveDownloadUrl(e)); if(!img && !open) return ""; return '<span class="pf-photo-wrap" style="display:inline-block;position:relative;">'+'<a href="'+(open||img)+'" target="_blank" rel="noopener"><img src="'+img+'" alt="" loading="lazy" onerror="this.style.display=\'none\'"></a>'+(dl?'<a href="'+dl+'" download title="Download" style="position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border-radius:4px;font-size:11px;padding:1px 5px;text-decoration:none;">\u2b07</a>':'')+'</span>'; }).filter(Boolean).join("");
   return ph ? '<div class="pf-photos">'+ph+'</div>' : "";
 }
 function coisHtml(p){
   if(!p.cois || !p.cois.length) return "";
-  return '<div class="pf-row" style="align-items:flex-start">COI files: <span>' + p.cois.map(function(e){ var u=esc(fileUrl(e)); var nm=esc(fileName(e)); return u?('<a href="'+u+'" target="_blank" rel="noopener">'+nm+'</a>'+(isDrive(e)?'':' \u26a0\ufe0f')):nm; }).join(", ") + '</span></div>';
+  return '<div class="pf-row" style="align-items:flex-start">COI files: <span>' + p.cois.map(function(e){ var open=esc(driveViewUrl(e)); var dl=esc(driveDownloadUrl(e)); var nm=esc(fileName(e)); if(!open) return nm; return '<a href="'+open+'" target="_blank" rel="noopener">'+nm+'</a>'+(dl&&isDrive(e)?' <a href="'+dl+'" download title="Download">\u2b07</a>':'')+(isDrive(e)?'':' \u26a0\ufe0f'); }).join("  &middot;  ") + '</span></div>';
 }
 function cardHtml(id){
   var p = profiles[id], comp = isComplete(p), coi = coiText(p);
@@ -4317,6 +4346,7 @@ function cardHtml(id){
   +   '<div class="pf-row">'
   +     '<button class="pf-btn" data-act="see" data-id="' + id + '">See Profile</button>'
   +     '<button class="pf-btn" data-act="edit" data-id="' + id + '">Edit</button>'
+  +     '<button class="pf-btn" data-act="togglecomplete" data-id="' + id + '">' + (p.manualComplete ? "✓ Marked (undo)" : "Mark complete") + '</button>'
   +     '<button class="pf-btn" data-act="del" data-id="' + id + '">Delete</button>'
   +   '</div>'
   +   '<div class="pf-detail" id="pf-detail-' + id + '">' + detailHtml(p) + '</div>'
@@ -4342,6 +4372,7 @@ function bindCard(id){
       var act = btn.getAttribute("data-act");
       if(act === "see"){ var d = document.getElementById("pf-detail-" + id); if(d) d.classList.toggle("open"); if(d && d.classList.contains("open")) enrichProfileFiles(id); }
       else if(act === "edit"){ editingId = id; showForm(profiles[id]); }
+      else if(act === "togglecomplete"){ var pp=profiles[id]; if(pp){ pp.manualComplete = !pp.manualComplete; save(); renderList(); updateCount(); paintBadges(); if(window.boothMap && window.boothMap.updateStats) try{ window.boothMap.updateStats(); }catch(_){} } }
       else if(act === "del"){ if(confirm("Delete this profile?")){ delete profiles[id]; save(); renderList(); updateCount(); paintBadges(); } }
     });
   });
@@ -4401,6 +4432,7 @@ function showForm(p){
   +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-annual" ' + (p.coiAnnual ? "checked" : "") + '> COI is annual / year-round (no expiry)</label></div>'
   +   '<div class="pf-field"><label>COI expiration date</label><input type="date" id="pf-f-exp" value="' + esc(p.coiExpiry || "") + '"><div class="pf-mini">Shows green until this date passes. Ignored if "annual" is checked.</div></div>'
   +   '<div class="pf-field"><label class="pf-inline"><input type="checkbox" id="pf-f-mktg" ' + (p.marketingVerified ? "checked" : "") + '> Marketing verification complete</label></div>'
+  +   '<div class="pf-field" style="background:rgba(127,201,135,.12);border:1px solid rgba(127,201,135,.4);border-radius:6px;padding:8px 10px;"><label class="pf-inline"><input type="checkbox" id="pf-f-complete" ' + (p.manualComplete ? "checked" : "") + '> <strong>Mark this vendor COMPLETE</strong></label><div class="pf-mini">Forces a green ✓ and stays complete even after a JotForm pull.</div></div>'
   +   '<div class="pf-field"><label>Photos</label><div id="pf-photo-list" class="pf-photos"></div><input type="file" id="pf-photo-up" accept="image/*" multiple style="margin-top:6px;font-size:12px;"><div class="pf-mini">Upload from device (\u2192 Drive), or paste URLs below.</div><textarea id="pf-f-photos" placeholder="Paste photo / Drive / JotForm URLs, one per line"></textarea></div>'
   +   '<div class="pf-field"><label>COI file(s)</label><div id="pf-coi-list"></div><input type="file" id="pf-coi-up" accept="application/pdf,image/*" multiple style="margin-top:6px;font-size:12px;"><div class="pf-mini">Upload COI (PDF/image \u2192 Drive), or paste a COI URL below.</div><textarea id="pf-f-cois" placeholder="Paste COI URLs, one per line"></textarea></div>'
   +   '<div class="pf-field"><label>Notes</label><textarea id="pf-f-notes">' + esc(p.notes || "") + '</textarea></div>'
@@ -4442,6 +4474,7 @@ function showForm(p){
       coiAnnual: document.getElementById("pf-f-annual").checked,
       coiExpiry: document.getElementById("pf-f-exp").value || "",
       marketingVerified: document.getElementById("pf-f-mktg").checked,
+      manualComplete: !!((document.getElementById("pf-f-complete")||{}).checked),
       photos: photos,
       cois: cois,
       notes: document.getElementById("pf-f-notes").value.trim()
@@ -4514,12 +4547,12 @@ async function pullFromPipeline(silent){
     if(typeof r.photoCount === "number") p.photoCount = r.photoCount;
     if(Array.isArray(r.events) && r.events.length) p._pipeEvents = r.events;
     // pipeline-authoritative compliance status
-    p.coiStatus = r.coiStatus || "";
+    if(r.coiStatus) p.coiStatus = r.coiStatus;            // don't blank a prior status on an empty pull
     p.mvfStatus = r.mvfStatus || "";
     p.vendorFileStatus = r.vendorFileStatus || "";
     if(r.coiLink) p.coiLink = r.coiLink;
     if(r.coiStatus === "Complete" || r.coiLink) p.coiOnFile = true;
-    p.marketingVerified = (r.mvfStatus === "Complete");
+    if(r.mvfStatus === "Complete") p.marketingVerified = true;   // upgrade-only: a pull never un-checks your manual mark
     if(r.submissionId) p.submissionId = r.submissionId;
     p.photos = normFiles(p.photos,"photo"); p.cois = normFiles(p.cois,"coi");
     if(isNew) created++; else updated++;
@@ -4583,6 +4616,12 @@ window.PFProfiles = {
       id:id,
       label:(p.businessName||p.vendorName||"Unnamed")+(p.category?" \u2014 "+p.category:"")+(p.preferredBoothSpace?"  [pref "+p.preferredBoothSpace+"]":"")
     }; }).sort(function(a,b){ return (a.label||"").localeCompare(b.label||""); }); },
+  statusFor: function(email, business, vendor){
+    var id = findProfileByEmailOrBiz(email||"", business||"");
+    if(!id && vendor){ var key=String(vendor).trim().toLowerCase(); id = Object.keys(profiles).find(function(k){ return String(profiles[k].vendorName||"").trim().toLowerCase()===key; }) || null; }
+    if(!id) return { found:false, complete:false };
+    return { found:true, complete:isComplete(profiles[id]), id:id };
+  },
   search: function(q){
     q = String(q==null?"":q).trim().toLowerCase();
     var arr = Object.keys(profiles).map(function(id){ var p=profiles[id]; return {
